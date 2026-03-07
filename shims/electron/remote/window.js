@@ -1,0 +1,215 @@
+// Shim for remote.getCurrentWindow() / remote.BrowserWindow
+// Obsidian uses: isMaximized, isMinimized, isFullScreen, minimize, maximize,
+//   unmaximize, close, setTitle, setAlwaysOnTop, isAlwaysOnTop,
+//   getBounds, setBounds, show, focus, setFullScreen, etc.
+
+const currentWindowState = {
+  title: "Obsidian",
+  isMaximized: false,
+  isMinimized: false,
+  isFullScreen: false,
+  isAlwaysOnTop: false,
+  bounds: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+  focusTime: Date.now(),
+};
+
+const currentWindow = {
+  isMaximized: () => currentWindowState.isMaximized,
+  isMinimized: () => currentWindowState.isMinimized,
+  isFullScreen: () => !!document.fullscreenElement,
+  isAlwaysOnTop: () => currentWindowState.isAlwaysOnTop,
+  isFocused: () => document.hasFocus(),
+  isVisible: () => true,
+  isDestroyed: () => false,
+
+  minimize() {
+    console.log("[shim:window] minimize (stub)");
+  },
+
+  maximize() {
+    currentWindowState.isMaximized = true;
+  },
+
+  unmaximize() {
+    currentWindowState.isMaximized = false;
+  },
+
+  restore() {
+    currentWindowState.isMinimized = false;
+  },
+
+  close() {
+    console.log("[shim:window] close (stub)");
+  },
+
+  focus() {
+    window.focus();
+  },
+
+  show() {},
+  hide() {},
+
+  setTitle(title) {
+    currentWindowState.title = title;
+    document.title = title;
+  },
+
+  getTitle() {
+    return currentWindowState.title;
+  },
+
+  setAlwaysOnTop(flag) {
+    currentWindowState.isAlwaysOnTop = flag;
+  },
+
+  setFullScreen(flag) {
+    if (flag) {
+      document.documentElement.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  },
+
+  getBounds() {
+    return {
+      x: window.screenX,
+      y: window.screenY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+  },
+
+  setBounds(bounds) {
+    // Cannot resize browser window from JS
+    console.log("[shim:window] setBounds (stub):", bounds);
+  },
+
+  setSize(width, height) {},
+  setPosition(x, y) {},
+  center() {},
+
+  setTrafficLightPosition() {},
+  setWindowButtonPosition() {},
+
+  get webContents() {
+    return webContentsShim._current();
+  },
+
+  get menuBarVisible() {
+    return false;
+  },
+  set menuBarVisible(v) {},
+
+  get loaded() {
+    return true;
+  },
+  set loaded(v) {},
+
+  get focusTime() {
+    return currentWindowState.focusTime;
+  },
+  set focusTime(v) {
+    currentWindowState.focusTime = v;
+  },
+
+  on(event, handler) {
+    // Map some Electron window events to browser equivalents
+    if (event === "focus") window.addEventListener("focus", handler);
+    else if (event === "blur") window.addEventListener("blur", handler);
+    else if (event === "resize") window.addEventListener("resize", handler);
+    return currentWindow;
+  },
+
+  once(event, handler) {
+    if (event === "focus")
+      window.addEventListener("focus", handler, { once: true });
+    return currentWindow;
+  },
+
+  removeListener() {
+    return currentWindow;
+  },
+  removeAllListeners() {
+    return currentWindow;
+  },
+};
+
+const currentWebContents = {
+  _zoomLevel: 0,
+
+  get zoomLevel() {
+    return this._zoomLevel;
+  },
+  set zoomLevel(v) {
+    this._zoomLevel = v;
+  },
+
+  executeJavaScript(code) {
+    try {
+      return Promise.resolve(eval(code));
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  },
+
+  getZoomFactor() {
+    return Math.pow(1.2, this._zoomLevel);
+  },
+  getZoomLevel() {
+    return this._zoomLevel;
+  },
+  setZoomLevel(v) {
+    this._zoomLevel = v;
+  },
+
+  isDevToolsOpened() {
+    return false;
+  },
+  openDevTools() {},
+
+  setWindowOpenHandler(handler) {
+    this._windowOpenHandler = handler;
+  },
+
+  capturePage(rect) {
+    // TODO: could use html2canvas
+    console.log("[shim:webContents] capturePage (stub)");
+    return Promise.resolve({
+      toPNG: () => new Uint8Array(0),
+      toJPEG: () => new Uint8Array(0),
+    });
+  },
+
+  undo() {},
+  redo() {},
+  pasteAndMatchStyle() {},
+
+  setSpellCheckerLanguages(langs) {},
+
+  on(event, handler) {
+    return currentWebContents;
+  },
+  once(event, handler) {
+    return currentWebContents;
+  },
+  removeListener() {
+    return currentWebContents;
+  },
+
+  get isSecured() {
+    return true;
+  },
+  set isSecured(v) {},
+};
+
+export const windowShim = {
+  _current: () => currentWindow,
+
+  getFocusedWindow() {
+    return currentWindow;
+  },
+};
+
+export const webContentsShim = {
+  _current: () => currentWebContents,
+};
