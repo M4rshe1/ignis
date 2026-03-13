@@ -221,17 +221,122 @@ const currentWebContents = {
   set isSecured(v) {},
 };
 
+// Popup tracking for PDF export etc.
+let _popupWindow = null;
+let _popupWebContents = null;
+
+export function registerPopupWindow() {
+  _popupWebContents = {
+    id: 2,
+    _zoomLevel: 0,
+    getZoomFactor() {
+      return 1;
+    },
+    getZoomLevel() {
+      return 0;
+    },
+    setZoomLevel() {},
+    printToPDF(options) {
+      return Promise.resolve(Buffer.from([]));
+    },
+    executeJavaScript(code) {
+      try {
+        return Promise.resolve(eval(code));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    on() {
+      return _popupWebContents;
+    },
+    once() {
+      return _popupWebContents;
+    },
+    removeListener() {
+      return _popupWebContents;
+    },
+    isDestroyed() {
+      return false;
+    },
+    isFocused() {
+      return false;
+    },
+  };
+  _popupWindow = {
+    id: 2,
+    webContents: _popupWebContents,
+    isDestroyed() {
+      return false;
+    },
+    isFocused() {
+      return false;
+    },
+    isVisible() {
+      return false;
+    },
+    close() {
+      _popupWindow = null;
+      _popupWebContents = null;
+    },
+    destroy() {
+      _popupWindow = null;
+      _popupWebContents = null;
+    },
+    on() {
+      return _popupWindow;
+    },
+    once() {
+      return _popupWindow;
+    },
+    removeListener() {
+      return _popupWindow;
+    },
+  };
+  return _popupWindow;
+}
+
+export function unregisterPopupWindow() {
+  _popupWindow = null;
+  _popupWebContents = null;
+}
+
 export const windowShim = {
   _current: () => currentWindow,
 
   getFocusedWindow() {
     return currentWindow;
   },
+
+  getAllWindows() {
+    const wins = [currentWindow];
+    if (_popupWindow) wins.push(_popupWindow);
+    return wins;
+  },
+
+  fromId(id) {
+    if (id === currentWindow.id) return currentWindow;
+    if (_popupWindow && id === _popupWindow.id) return _popupWindow;
+    return null;
+  },
+
+  fromWebContents(wc) {
+    if (wc === currentWebContents) return currentWindow;
+    if (_popupWebContents && wc === _popupWebContents) return _popupWindow;
+    return null;
+  },
 };
 
 export const webContentsShim = {
   _current: () => currentWebContents,
   fromId(id) {
-    return id === currentWebContents.id ? currentWebContents : null;
+    if (id === currentWebContents.id) return currentWebContents;
+    if (_popupWebContents && id === _popupWebContents.id)
+      return _popupWebContents;
+    return null;
+  },
+  getAllWebContents() {
+    const wcs = [currentWebContents];
+    if (_popupWebContents) wcs.push(_popupWebContents);
+    return wcs;
   },
 };

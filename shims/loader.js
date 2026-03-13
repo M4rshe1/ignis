@@ -6,6 +6,10 @@ import { urlShim } from "./url.js";
 import { cryptoShim } from "./crypto/index.js";
 import { processShim } from "./process.js";
 import { installRequestUrlShim } from "./request-url.js";
+import {
+  registerPopupWindow,
+  unregisterPopupWindow,
+} from "./electron/remote/window.js";
 import * as childProcessShim from "./node/child_process.js";
 import * as eventsShim from "./node/events.js";
 import * as osShim from "./node/os.js";
@@ -116,6 +120,34 @@ if (typeof window.Buffer === "undefined") {
 
 window.close = function () {
   console.log("[ignis] window.close() blocked");
+};
+
+window.__popupIframe = null;
+const _originalOpen = window.open;
+window.open = function (url, target, features) {
+  if (url === "about:blank" || (features && features.includes("popup"))) {
+    console.log("[ignis] intercepted popup:", url, features);
+    registerPopupWindow();
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText =
+      "position:fixed;left:-9999px;width:0;height:0;border:none;";
+    document.body.appendChild(iframe);
+    window.__popupIframe = iframe;
+    const iframeWin = iframe.contentWindow;
+    iframeWin.require = window.require;
+    iframeWin.module = window.module;
+    iframeWin.Buffer = window.Buffer;
+    iframeWin.process = window.process;
+    iframeWin.global = iframeWin;
+    iframeWin.globalEnhance = window.globalEnhance;
+    iframeWin.close = function () {
+      unregisterPopupWindow();
+      iframe.remove();
+      window.__popupIframe = null;
+    };
+    return iframeWin;
+  }
+  return _originalOpen.call(window, url, target, features);
 };
 
 window.addEventListener(

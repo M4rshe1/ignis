@@ -159,11 +159,21 @@ export const ipcRenderer = {
     }
 
     if (channel === "print-to-pdf") {
-      const [options] = args;
-      window.print();
-      queueMicrotask(() => {
-        ipcRenderer._emit("print-to-pdf", { success: true });
-      });
+      const iframe = window.__popupIframe;
+      if (iframe) {
+        setTimeout(() => {
+          iframe.contentWindow.print();
+          setTimeout(() => {
+            iframe.contentWindow.close();
+            ipcRenderer._emit("print-to-pdf", { success: true });
+          }, 500);
+        }, 200);
+      } else {
+        window.print();
+        queueMicrotask(() => {
+          ipcRenderer._emit("print-to-pdf", { success: true });
+        });
+      }
       return;
     }
   },
