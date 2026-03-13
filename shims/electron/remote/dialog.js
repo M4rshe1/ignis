@@ -5,10 +5,18 @@ export const dialogShim = {
     return { canceled: true, filePaths: [] };
   },
 
+  // TODO: replace prompt() with a styled modal (matching vault manager style)
   async showSaveDialog(browserWindow, options) {
-    // TODO: implement custom modal
-    console.log("[shim:dialog] showSaveDialog (stub):", options);
-    return { canceled: true, filePath: undefined };
+    if (typeof browserWindow === "object" && !options) {
+      options = browserWindow;
+    }
+    const defaultName =
+      options?.defaultPath?.split(/[/\\]/).pop() || "download";
+    const name = prompt("Save as:", defaultName);
+    if (!name) {
+      return { canceled: true, filePath: undefined };
+    }
+    return { canceled: false, filePath: "/downloads/" + name };
   },
 
   async showMessageBox(browserWindow, options) {

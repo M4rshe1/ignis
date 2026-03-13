@@ -157,6 +157,15 @@ export const ipcRenderer = {
       handleRequestUrl(requestId, request);
       return;
     }
+
+    if (channel === "print-to-pdf") {
+      const [options] = args;
+      window.print();
+      queueMicrotask(() => {
+        ipcRenderer._emit("print-to-pdf", { success: true });
+      });
+      return;
+    }
   },
 
   sendSync(channel, ...args) {

@@ -1,8 +1,8 @@
 {
-  "name": "obsidian-bridge",
+  "name": "Ignis",
   "version": "0.1.0",
   "private": true,
-  "description": "Self-hosted Obsidian via Electron API shimming",
+  "description": "An Electron shim and server bridge for running Obsidian in a browser.",
   "scripts": {
     "build:shims": "node build.js",
     "dev:server": "node server/index.js",

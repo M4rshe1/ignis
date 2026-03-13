@@ -165,6 +165,13 @@ const currentWebContents = {
     this._windowOpenHandler = handler;
   },
 
+  printToPDF(options) {
+    return new Promise((resolve) => {
+      window.print();
+      resolve(Buffer.from([]));
+    });
+  },
+
   capturePage(rect) {
     // TODO: could use html2canvas
     console.log("[shim:webContents] capturePage (stub)");
