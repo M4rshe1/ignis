@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] - Slifer (2026-03-24)
+
+### Changed
+
+- Use stack fingerprinting to identify caller context for file staging registry
+
 ## [0.6.2] - Slifer (2026-03-24)
 
 ### Added
