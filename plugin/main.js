@@ -1,4 +1,6 @@
-const { Plugin, Notice, TFile, TFolder } = require("obsidian");
+const { Plugin, Setting, Notice, TFile, TFolder } = require("obsidian");
+
+window.__obsidianAPI = require("obsidian");
 
 function getVaultId() {
   return window.__currentVaultId || "";
@@ -17,9 +19,51 @@ function triggerDownload(endpoint, filePath, downloadName) {
   a.click();
 }
 
+function createNavEl(tab, setting) {
+  const nav = document.createElement("div");
+  nav.className = "vertical-tab-nav-item tappable";
+
+  const title = document.createElement("div");
+  title.className = "vertical-tab-nav-item-title";
+  title.textContent = tab.name;
+  nav.appendChild(title);
+
+  const chevron = document.createElement("div");
+  chevron.className = "vertical-tab-nav-item-chevron";
+  nav.appendChild(chevron);
+
+  nav.addEventListener("click", () => {
+    setting.openTab(tab);
+  });
+
+  return nav;
+}
+
+function createIgnisTab(id, name, displayFn) {
+  const tab = {
+    id,
+    name,
+    containerEl: createDiv("vertical-tab-content"),
+    navEl: null,
+
+    display() {
+      this.containerEl.empty();
+      displayFn(this.containerEl);
+    },
+
+    hide() {
+      this.containerEl.empty();
+    },
+  };
+
+  return tab;
+}
+
 class IgnisBridgePlugin extends Plugin {
   async onload() {
     console.log("[ignis-bridge] Plugin loaded");
+
+    this.patchSettingsModal();
 
     this.addRibbonIcon("upload", "Upload file", () => {
       this.showFilePicker();
@@ -34,6 +78,72 @@ class IgnisBridgePlugin extends Plugin {
         }
       }),
     );
+  }
+
+  patchSettingsModal() {
+    const original = this.app.setting.onOpen;
+    const self = this;
+    this._originalOnOpen = original;
+
+    this.app.setting.onOpen = function () {
+      original.call(this);
+      self.injectIgnisSettings(this);
+    };
+  }
+
+  injectIgnisSettings(setting) {
+    const group = document.createElement("div");
+    group.className = "vertical-tab-header-group";
+
+    const title = document.createElement("div");
+    title.className = "vertical-tab-header-group-title";
+    title.textContent = "Ignis";
+    group.appendChild(title);
+
+    const items = document.createElement("div");
+    items.className = "vertical-tab-header-group-items";
+    group.appendChild(items);
+
+    const generalTab = createIgnisTab(
+      "ignis-general",
+      "General",
+      (containerEl) => {
+        containerEl.createEl("h2", { text: "Ignis General Settings" });
+
+        new Setting(containerEl)
+          .setName("Example toggle")
+          .setDesc("This is a test toggle to prove the Setting API works.")
+          .addToggle((toggle) => {
+            toggle.setValue(false);
+            toggle.onChange((value) => {
+              console.log("[ignis] Toggle:", value);
+            });
+          });
+      },
+    );
+
+    const pluginsTab = createIgnisTab(
+      "ignis-server-plugins",
+      "Server Plugins",
+      (containerEl) => {
+        containerEl.createEl("h2", { text: "Server Plugins" });
+
+        new Setting(containerEl)
+          .setName("Example text input")
+          .setDesc("This is a test input to prove a second tab works.")
+          .addText((text) => {
+            text.setPlaceholder("Type something...");
+          });
+      },
+    );
+
+    generalTab.navEl = createNavEl(generalTab, setting);
+    pluginsTab.navEl = createNavEl(pluginsTab, setting);
+
+    items.appendChild(generalTab.navEl);
+    items.appendChild(pluginsTab.navEl);
+
+    setting.tabHeadersEl.appendChild(group);
   }
 
   addFileMenuItems(menu, file) {
@@ -99,6 +209,7 @@ class IgnisBridgePlugin extends Plugin {
       if (successCount > 0) {
         new Notice(`Uploaded ${successCount} file(s) successfully`);
       }
+
       if (errorCount > 0) {
         new Notice(`Failed to upload ${errorCount} file(s)`, 5000);
       }
@@ -111,6 +222,10 @@ class IgnisBridgePlugin extends Plugin {
   }
 
   onunload() {
+    if (this._originalOnOpen) {
+      this.app.setting.onOpen = this._originalOnOpen;
+    }
+
     console.log("[ignis-bridge] Plugin unloaded");
   }
 }
