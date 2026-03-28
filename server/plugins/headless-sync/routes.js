@@ -46,6 +46,92 @@ function mountRoutes(router, plugin) {
     }
   });
 
+  router.post("/setup", async (req, res) => {
+    const ctx = plugin.getCtx();
+    const syncManager = plugin.getSyncManager();
+    const { vaultId, remoteVault, vaultPassword, deviceName, mode } = req.body;
+
+    if (!vaultId || !remoteVault) {
+      return res.status(400).json({ error: "vaultId and remoteVault are required" });
+    }
+
+    if (!auth.isAuthenticated(ctx.dataDir)) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const vaultPath = ctx.config.getVaultPath(vaultId);
+
+    if (!vaultPath) {
+      return res.status(404).json({ error: "Vault not found" });
+    }
+
+    try {
+      const state = await syncManager.setupSync(vaultId, vaultPath, remoteVault, {
+        vaultPassword,
+        deviceName,
+        mode,
+      });
+
+      res.json({ success: true, state });
+    } catch (e) {
+      ctx.log(`Failed to setup sync: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.post("/start", (req, res) => {
+    const ctx = plugin.getCtx();
+    const syncManager = plugin.getSyncManager();
+    const { vaultId } = req.body;
+
+    if (!vaultId) {
+      return res.status(400).json({ error: "vaultId is required" });
+    }
+
+    try {
+      const state = syncManager.startSync(vaultId);
+      res.json({ success: true, state });
+    } catch (e) {
+      ctx.log(`Failed to start sync: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.post("/stop", (req, res) => {
+    const ctx = plugin.getCtx();
+    const syncManager = plugin.getSyncManager();
+    const { vaultId } = req.body;
+
+    if (!vaultId) {
+      return res.status(400).json({ error: "vaultId is required" });
+    }
+
+    try {
+      const state = syncManager.stopSync(vaultId);
+      res.json({ success: true, state });
+    } catch (e) {
+      ctx.log(`Failed to stop sync: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.get("/logs", (req, res) => {
+    const syncManager = plugin.getSyncManager();
+    const { vaultId, limit } = req.query;
+
+    if (!vaultId) {
+      return res.status(400).json({ error: "vaultId is required" });
+    }
+
+    const logs = syncManager.getLogs(vaultId, limit ? parseInt(limit) : 100);
+    res.json({ logs });
+  });
+
+  router.get("/vaults", (req, res) => {
+    const syncManager = plugin.getSyncManager();
+    res.json({ vaults: syncManager.getAllStates() });
+  });
+
   router.get("/remote-vaults", async (req, res) => {
     const ctx = plugin.getCtx();
 
