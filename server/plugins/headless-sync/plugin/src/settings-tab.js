@@ -234,47 +234,84 @@ class HeadlessSyncSettingTab extends PluginSettingTab {
         }
       });
 
-    // Log viewer
+    // Log viewer (collapsible)
     await this.renderLogs(containerEl, vaultId);
   }
 
   async renderLogs(containerEl, vaultId) {
-    containerEl.createEl("h3", { text: "Recent logs" });
+    const details = containerEl.createEl("details", {
+      cls: "ignis-log-details",
+    });
+
+    details.createEl("summary", { text: "Sync logs" });
+
+    const logBox = details.createEl("pre", { cls: "ignis-log-terminal" });
+    const codeEl = logBox.createEl("code");
 
     let logsData;
 
     try {
       logsData = await api.getLogs(vaultId, 50);
     } catch (e) {
-      containerEl.createEl("p", {
-        text: `Failed to load logs: ${e.message}`,
-        cls: "mod-warning",
-      });
+      codeEl.textContent = `Failed to load logs: ${e.message}`;
       return;
     }
 
-    const logContainer = containerEl.createDiv("ignis-log-viewer");
-
     if (logsData.logs.length === 0) {
-      logContainer.createEl("p", {
-        text: "No log entries yet.",
-        cls: "setting-item-description",
-      });
+      codeEl.textContent = "No log entries yet.";
     } else {
-      for (const entry of logsData.logs) {
+      const lines = logsData.logs.map((entry) => {
         const time = new Date(entry.timestamp).toLocaleTimeString();
-        logContainer.createEl("div", {
-          text: `[${time}] ${entry.line}`,
-          cls: "ignis-log-entry",
-        });
-      }
+        return `[${time}] ${entry.line}`;
+      });
+
+      codeEl.textContent = lines.join("\n");
     }
+
+    logBox.scrollTop = logBox.scrollHeight;
+
+    // Live updates via WebSocket
+    const wsListener = this.plugin.wsListener;
+
+    if (!wsListener) {
+      return;
+    }
+
+    const onLog = (payload) => {
+      if (payload.vaultId !== vaultId) {
+        return;
+      }
+
+      const time = new Date().toLocaleTimeString();
+      const line = `[${time}] ${payload.line}`;
+
+      if (codeEl.textContent === "No log entries yet.") {
+        codeEl.textContent = line;
+      } else {
+        codeEl.textContent += "\n" + line;
+      }
+
+      const isNearBottom =
+        logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 50;
+
+      if (isNearBottom) {
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+    };
+
+    wsListener.on("sync-log", onLog);
+    this._logCleanup = () => wsListener.off("sync-log", onLog);
   }
 
   hide() {
     if (this._cancelWait) {
       this._cancelWait();
       this._cancelWait = null;
+    }
+
+    if (this._logCleanup) {
+      this._logCleanup();
+      this._logCleanup = null;
     }
 
     super.hide();

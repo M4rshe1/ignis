@@ -116,7 +116,7 @@ function mountRoutes(router, plugin) {
     }
   });
 
-  router.post("/unlink", (req, res) => {
+  router.post("/unlink", async (req, res) => {
     const ctx = plugin.getCtx();
     const syncManager = plugin.getSyncManager();
     const { vaultId } = req.body;
@@ -126,7 +126,7 @@ function mountRoutes(router, plugin) {
     }
 
     try {
-      syncManager.unlinkVault(vaultId);
+      await syncManager.unlinkVault(vaultId);
       res.json({ success: true });
     } catch (e) {
       ctx.log(`Failed to unlink vault: ${e.message}`);

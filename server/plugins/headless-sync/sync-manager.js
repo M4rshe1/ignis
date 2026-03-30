@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { spawnOb } = require("./ob-cli");
+const { spawnOb, runCommand } = require("./ob-cli");
 
 const MAX_LOG_ENTRIES = 200;
 
@@ -142,6 +142,7 @@ class SyncManager {
         if (line.trim()) {
           this.addLog(state, line.trim());
           state.lastActivity = new Date().toISOString();
+          this.broadcastLog(vaultId, line.trim());
         }
       }
     });
@@ -213,7 +214,7 @@ class SyncManager {
     return this.getState(vaultId);
   }
 
-  unlinkVault(vaultId) {
+  async unlinkVault(vaultId) {
     const state = this.states.get(vaultId);
 
     if (!state) {
@@ -222,6 +223,14 @@ class SyncManager {
 
     if (state._process) {
       state._process.kill("SIGTERM");
+    }
+
+    // Tell ob to disconnect from the remote vault and clear its stored config
+    try {
+      await runCommand(["sync-unlink", "--path", state.vaultPath]);
+      this.ctx.log(`ob sync-unlink completed for ${vaultId}`);
+    } catch (e) {
+      this.ctx.log(`ob sync-unlink failed for ${vaultId}: ${e.message}`);
     }
 
     this.states.delete(vaultId);
@@ -277,6 +286,24 @@ class SyncManager {
 
     if (state.logs.length > MAX_LOG_ENTRIES) {
       state.logs = state.logs.slice(-MAX_LOG_ENTRIES);
+    }
+  }
+
+  broadcastLog(vaultId, line) {
+    if (!this.ctx.wss || !this.ctx.wss.clients) {
+      return;
+    }
+
+    const message = JSON.stringify({
+      channel: "plugin:headless-sync",
+      type: "sync-log",
+      payload: { vaultId, line },
+    });
+
+    for (const client of this.ctx.wss.clients) {
+      if (client.readyState === 1) {
+        client.send(message);
+      }
     }
   }
 

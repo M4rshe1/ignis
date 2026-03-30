@@ -1,6 +1,7 @@
 const { Plugin } = require("obsidian");
 const { HeadlessSyncSettingTab } = require("./settings-tab");
 const { WsListener } = require("./ws-listener");
+const { initSyncStatusBar } = require("./sync-status-bar");
 const api = require("./api");
 
 class IgnisHeadlessSyncPlugin extends Plugin {
@@ -8,11 +9,7 @@ class IgnisHeadlessSyncPlugin extends Plugin {
     this.wsListener = new WsListener();
     this.wsListener.start();
 
-    this.wsListener.on("sync-status", (payload) => {
-      if (payload.vaultId === this.app.vault.getName()) {
-        console.log("[ignis-headless-sync] Status update:", payload.status);
-      }
-    });
+    this._syncStatusBarCleanup = initSyncStatusBar(this, this.wsListener);
 
     this.addSettingTab(new HeadlessSyncSettingTab(this.app, this));
 
@@ -53,12 +50,15 @@ class IgnisHeadlessSyncPlugin extends Plugin {
   }
 
   onunload() {
+    if (this._syncStatusBarCleanup) {
+      this._syncStatusBarCleanup();
+      this._syncStatusBarCleanup = null;
+    }
+
     if (this.wsListener) {
       this.wsListener.stop();
       this.wsListener = null;
     }
-
-    console.log("[ignis-headless-sync] Unloaded");
   }
 }
 
