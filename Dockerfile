@@ -8,6 +8,8 @@ RUN npm ci --ignore-scripts
 
 COPY build.js ./
 COPY src/ ./src/
+COPY plugin/src/ ./plugin/src/
+COPY server/plugins/ ./server/plugins/
 
 RUN npm run build
 
@@ -29,6 +31,8 @@ COPY scripts/ ./scripts/
 COPY images/ ./images/
 COPY plugin/ ./plugin/
 COPY --from=build /build/dist ./dist
+COPY --from=build /build/plugin/main.js ./plugin/main.js
+COPY --from=build /build/server/plugins/headless-sync/plugin/main.js ./server/plugins/headless-sync/plugin/main.js
 
 RUN chmod +x /app/scripts/entrypoint.sh
 

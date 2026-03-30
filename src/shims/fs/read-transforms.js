@@ -28,17 +28,7 @@ export function applyReadTransform(path, data) {
   }
 
   try {
-    const result = fn(data);
-
-    if (result !== data) {
-      const before = typeof data === "string" ? data : new TextDecoder().decode(data);
-      const after = typeof result === "string" ? result : new TextDecoder().decode(result);
-      console.log(`[shim:fs] Read transform applied: ${norm}`);
-      console.log(`[shim:fs]   before:`, before);
-      console.log(`[shim:fs]   after:`, after);
-    }
-
-    return result;
+    return fn(data);
   } catch {
     return data;
   }
