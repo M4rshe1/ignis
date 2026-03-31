@@ -8,6 +8,7 @@ function resolveVaultId() {
   const urlParams = new URLSearchParams(window.location.search);
   window.__currentVaultId =
     urlParams.get("vault") || localStorage.getItem("last-vault") || "";
+  window.__workspaceName = urlParams.get("workspace") || "";
 }
 
 function initVaultConfig() {

@@ -19,6 +19,22 @@ function vaultId() {
   return window.__currentVaultId || "";
 }
 
+const WORKSPACE_PATH = ".obsidian/workspace.json";
+
+function rewriteWorkspacePath(normalizedPath) {
+  const name = window.__workspaceName;
+
+  if (!name) {
+    return normalizedPath;
+  }
+
+  if (normalizedPath === WORKSPACE_PATH) {
+    return `.obsidian/workspace.${name}.json`;
+  }
+
+  return normalizedPath;
+}
+
 async function request(method, endpoint, params = {}) {
   const url = new URL(API_BASE + endpoint, window.location.origin);
 
@@ -110,10 +126,26 @@ export const transport = {
   },
 
   async readFile(path, encoding) {
-    const res = await request("GET", "/readFile", {
-      path: normPath(path),
-      encoding: encoding || "",
-    });
+    const norm = normPath(path);
+    const rewritten = rewriteWorkspacePath(norm);
+
+    let res;
+
+    try {
+      res = await request("GET", "/readFile", {
+        path: rewritten,
+        encoding: encoding || "",
+      });
+    } catch (e) {
+      if (rewritten !== norm && e.code === "ENOENT") {
+        res = await request("GET", "/readFile", {
+          path: norm,
+          encoding: encoding || "",
+        });
+      } else {
+        throw e;
+      }
+    }
 
     if (encoding === "utf8" || encoding === "utf-8") {
       return res.text();
@@ -126,7 +158,7 @@ export const transport = {
   async writeFile(path, content, encoding) {
     const isText = typeof content === "string";
     return requestJson("POST", "/writeFile", {
-      path: normPath(path),
+      path: rewriteWorkspacePath(normPath(path)),
       content: isText ? content : uint8ToBase64(content),
       encoding: encoding || (isText ? "utf-8" : "binary"),
       base64: !isText,
@@ -193,10 +225,26 @@ export const transport = {
   },
 
   readFileSync(path, encoding) {
-    const xhr = requestSync("GET", "/readFile", {
-      path: normPath(path),
-      encoding: encoding || "",
-    });
+    const norm = normPath(path);
+    const rewritten = rewriteWorkspacePath(norm);
+
+    let xhr;
+
+    try {
+      xhr = requestSync("GET", "/readFile", {
+        path: rewritten,
+        encoding: encoding || "",
+      });
+    } catch (e) {
+      if (rewritten !== norm && e.code === "ENOENT") {
+        xhr = requestSync("GET", "/readFile", {
+          path: norm,
+          encoding: encoding || "",
+        });
+      } else {
+        throw e;
+      }
+    }
 
     if (encoding === "utf8" || encoding === "utf-8") {
       return xhr.responseText;
@@ -215,7 +263,7 @@ export const transport = {
   writeFileSync(path, content, encoding) {
     const isText = typeof content === "string";
     requestSync("POST", "/writeFile", {
-      path: normPath(path),
+      path: rewriteWorkspacePath(normPath(path)),
       content: isText ? content : uint8ToBase64(content),
       encoding: encoding || (isText ? "utf-8" : "binary"),
       base64: !isText,
