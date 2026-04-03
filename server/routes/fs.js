@@ -72,7 +72,9 @@ function resolveVaultPath(vaultRoot, relativePath) {
   const cleaned = (relativePath || "").replace(/^\/+/, "");
   const resolved = path.resolve(vaultRoot, cleaned);
 
-  if (!resolved.startsWith(path.resolve(vaultRoot))) {
+  const resolvedRoot = path.resolve(vaultRoot);
+
+  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
     return null;
   }
   return resolved;
