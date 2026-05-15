@@ -87,3 +87,10 @@ export function applyWriteTransform(path, data) {
     return data;
   }
 }
+
+// Test-only: clear all registered hooks.
+export function _reset() {
+  pathResolvers.length = 0;
+  readTransforms.clear();
+  writeTransforms.clear();
+}
