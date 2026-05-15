@@ -253,6 +253,22 @@ function installFetchShim() {
   };
 }
 
+function installVibrateShim() {
+  if (typeof navigator.vibrate === "function") {
+    return;
+  }
+
+  // Some Firefox configurations leave navigator.vibrate undefined (gated by dom.vibrator.enabled).
+  // Obsidian assumes it's always callable, so provide a no-op where it's missing.
+  try {
+    Object.defineProperty(navigator, "vibrate", {
+      configurable: true,
+      writable: true,
+      value: () => true,
+    });
+  } catch {}
+}
+
 function installContextMenuFix() {
   // hacky fix to prevent browser from showing context menu while allowing obsidian context menu
   window.addEventListener(
@@ -271,5 +287,6 @@ export function installGlobals() {
   installFetchShim();
   installWindowClose();
   installWindowOpen();
+  installVibrateShim();
   installContextMenuFix();
 }
