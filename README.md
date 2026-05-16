@@ -85,7 +85,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - OBSIDIAN_VERSION=1.12.4
+      - OBSIDIAN_VERSION=1.12.7
       - PUID=1000
       - PGID=1000
     volumes:
@@ -113,7 +113,7 @@ volumes:
 | `PORT` | Server listen port | `8080` |
 | `VAULT_ROOT` | Path to vault storage inside the container | `/vaults` |
 | `DATA_ROOT` | Path to persistent data (plugin config, sync state, auth tokens) | `/app/data` |
-| `OBSIDIAN_VERSION` | Obsidian version to download | `1.12.4` |
+| `OBSIDIAN_VERSION` | Obsidian version to download | `1.12.7` |
 | `PUID` | User ID for file ownership | `1000` |
 | `PGID` | Group ID for file ownership | `1000` |
 | `WRITE_COALESCE_MS` | Debounce window (ms) for rapid writes. Useful for slow filesystems (rclone, NFS, SMB). Set to `0` to disable. | `5000` |

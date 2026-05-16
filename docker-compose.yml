@@ -4,7 +4,7 @@ services:
     ports:
       - "8082:8080"
     environment:
-      - OBSIDIAN_VERSION=1.12.4
+      - OBSIDIAN_VERSION=1.12.7
     volumes:
       - ./vaults:/vaults
       - ./data:/app/data

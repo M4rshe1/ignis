@@ -27,25 +27,19 @@ fi
 chown -R "$PUID:$PGID" /vaults /app/obsidian-app
 
 OBSIDIAN_DIR="/app/obsidian-app"
-OBSIDIAN_VERSION="${OBSIDIAN_VERSION:-1.12.4}"
+OBSIDIAN_VERSION="${OBSIDIAN_VERSION:-1.12.7}"
 
 if [ ! -f "$OBSIDIAN_DIR/index.html" ]; then
   echo "[ignis] First run. Downloading Obsidian v${OBSIDIAN_VERSION}..."
 
-  curl -fSL "https://github.com/obsidianmd/obsidian-releases/releases/download/v${OBSIDIAN_VERSION}/obsidian_${OBSIDIAN_VERSION}_amd64.deb" \
-    -o /tmp/obsidian.deb
-
-  echo "[ignis] Extracting .deb..."
-  mkdir -p /tmp/obsidian-deb /tmp/obsidian-pkg
-  ar x /tmp/obsidian.deb --output=/tmp/obsidian-deb
-  tar -xf /tmp/obsidian-deb/data.tar.xz -C /tmp/obsidian-pkg
+  curl -fSL "https://github.com/obsidianmd/obsidian-releases/releases/download/v${OBSIDIAN_VERSION}/obsidian-${OBSIDIAN_VERSION}.asar.gz" \
+    -o /tmp/obsidian.asar.gz
 
   echo "[ignis] Unpacking asar..."
-  npx --yes @electron/asar extract \
-    /tmp/obsidian-pkg/opt/Obsidian/resources/obsidian.asar \
-    "$OBSIDIAN_DIR"
+  gunzip /tmp/obsidian.asar.gz
+  npx --yes @electron/asar extract /tmp/obsidian.asar "$OBSIDIAN_DIR"
 
-  rm -rf /tmp/obsidian.deb /tmp/obsidian-deb /tmp/obsidian-pkg
+  rm -f /tmp/obsidian.asar
 
   echo "[ignis] Obsidian v${OBSIDIAN_VERSION} ready."
 else

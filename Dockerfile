@@ -18,7 +18,7 @@ RUN npm run build
 FROM node:22-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  ca-certificates curl binutils xz-utils gosu \
+  ca-certificates curl gosu \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -38,7 +38,7 @@ RUN chmod +x /app/scripts/entrypoint.sh
 
 ENV PORT=8080
 ENV VAULT_ROOT=/vaults
-ENV OBSIDIAN_VERSION=1.12.4
+ENV OBSIDIAN_VERSION=1.12.7
 ENV OBSIDIAN_ASSETS_PATH=/app/obsidian-app
 ENV PUID=1000
 ENV PGID=1000
