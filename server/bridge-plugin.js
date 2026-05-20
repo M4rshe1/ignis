@@ -6,7 +6,7 @@ const {
 } = require("./plugin-system/obsidian-plugin");
 
 const BRIDGE_PLUGIN_ID = "ignis-bridge";
-const BRIDGE_PLUGIN_DIR = path.join(__dirname, "..", "plugin");
+const BRIDGE_PLUGIN_DIR = path.join(__dirname, "..", "packages", "bridge-plugin");
 
 // .ignis metadata helpers
 

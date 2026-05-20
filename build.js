@@ -8,17 +8,8 @@ Promise.all([
   // Build ignis-ui.js (delegated to packages/ui)
   require("./packages/ui/build.js"),
 
-  // Build ignis-bridge plugin
-  esbuild.build({
-    entryPoints: [path.join(__dirname, "plugin", "src", "main.js")],
-    bundle: true,
-    outfile: path.join(__dirname, "plugin", "main.js"),
-    format: "cjs",
-    platform: "browser",
-    target: ["chrome90"],
-    external: ["obsidian", "fs"],
-    logLevel: "info",
-  }),
+  // Build ignis-bridge plugin (delegated to packages/bridge-plugin)
+  require("./packages/bridge-plugin/build.js"),
 
   // Build headless-sync bundled plugin
   esbuild.build({

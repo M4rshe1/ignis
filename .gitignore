@@ -2,6 +2,7 @@ node_modules/
 dist/
 investigation/
 vaults/
-plugin/main.js
+packages/*/dist/
+packages/bridge-plugin/main.js
 server/plugins/*/plugin/main.js
 demo-vaults/

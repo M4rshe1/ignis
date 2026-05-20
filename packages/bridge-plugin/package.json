@@ -1,5 +1,11 @@
 {
   "name": "@ignis/bridge-plugin",
   "version": "0.0.0-internal",
-  "private": true
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
 }
