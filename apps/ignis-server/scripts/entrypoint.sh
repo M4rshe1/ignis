@@ -68,4 +68,4 @@ else
 fi
 
 # Run as the determined user
-exec gosu "$RUN_USER" node /app/server/index.js
+exec gosu "$RUN_USER" node /app/apps/ignis-server/server/index.js

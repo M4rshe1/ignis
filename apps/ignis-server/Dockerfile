@@ -1,15 +1,23 @@
-# Build shim-loader.js
+# Build stage.
+# Runs from the repo root as build context so workspace symlinks resolve.
+# Copies workspace package.jsons first for cache-friendly npm ci.
 FROM node:22-slim AS build
 
-WORKDIR /build
+WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY packages/services/package.json ./packages/services/
+COPY packages/shim/package.json ./packages/shim/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/bridge-plugin/package.json ./packages/bridge-plugin/
+COPY packages/server-core/package.json ./packages/server-core/
+COPY apps/ignis-server/package.json ./apps/ignis-server/
+
 RUN npm ci --ignore-scripts
 
 COPY build.js ./
-COPY src/ ./src/
-COPY plugin/src/ ./plugin/src/
-COPY server/plugins/ ./server/plugins/
+COPY packages/ ./packages/
+COPY apps/ignis-server/ ./apps/ignis-server/
 
 RUN npm run build
 
@@ -25,18 +33,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Workspace package.jsons + lockfile so npm ci sets up the @ignis/* symlinks.
 COPY package.json package-lock.json ./
+COPY packages/services/package.json ./packages/services/
+COPY packages/shim/package.json ./packages/shim/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/bridge-plugin/package.json ./packages/bridge-plugin/
+COPY packages/server-core/package.json ./packages/server-core/
+COPY apps/ignis-server/package.json ./apps/ignis-server/
+
 RUN npm ci --omit=dev --ignore-scripts
 
-COPY server/ ./server/
-COPY scripts/ ./scripts/
+# Runtime sources: the server, entrypoint script, repo-rooted images, and the server-core JS that gets required from the server at runtime.
+COPY apps/ignis-server/server/ ./apps/ignis-server/server/
+COPY apps/ignis-server/scripts/ ./apps/ignis-server/scripts/
 COPY images/ ./images/
-COPY plugin/ ./plugin/
-COPY --from=build /build/dist ./dist
-COPY --from=build /build/plugin/main.js ./plugin/main.js
-COPY --from=build /build/server/plugins/headless-sync/plugin/main.js ./server/plugins/headless-sync/plugin/main.js
+COPY packages/server-core/src/ ./packages/server-core/src/
 
-RUN chmod +x /app/scripts/entrypoint.sh
+# Bridge plugin: manifest + styles for auto-install into vaults; built main.js comes from the build stage.
+COPY packages/bridge-plugin/manifest.json ./packages/bridge-plugin/
+COPY packages/bridge-plugin/styles.css ./packages/bridge-plugin/
+
+# Built artifacts from the build stage.
+COPY --from=build /app/packages/shim/dist/shim-loader.js ./packages/shim/dist/shim-loader.js
+COPY --from=build /app/packages/ui/dist/ignis-ui.js ./packages/ui/dist/ignis-ui.js
+COPY --from=build /app/packages/bridge-plugin/main.js ./packages/bridge-plugin/main.js
+COPY --from=build /app/apps/ignis-server/server/plugins/headless-sync/plugin/main.js ./apps/ignis-server/server/plugins/headless-sync/plugin/main.js
+
+RUN chmod +x /app/apps/ignis-server/scripts/entrypoint.sh
 
 ENV PORT=8080
 ENV VAULT_ROOT=/vaults
@@ -50,4 +74,4 @@ EXPOSE 8080
 VOLUME /vaults
 VOLUME /app/obsidian-app
 
-ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+ENTRYPOINT ["/app/apps/ignis-server/scripts/entrypoint.sh"]
