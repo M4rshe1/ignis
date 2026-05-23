@@ -46,8 +46,13 @@ function encodeContentDispositionFilename(filename) {
 
 // Resolve a client-provided path to an absolute path within a vault.
 // Strips leading slashes so paths from the client are always treated as relative to the vault root.
+// Rejects nullish input so missing-field bugs in callers don't silently target the vault root.
 function resolveVaultPath(vaultRoot, relativePath) {
-  const cleaned = (relativePath || "").replace(/^\/+/, "");
+  if (relativePath === null || relativePath === undefined) {
+    return null;
+  }
+
+  const cleaned = relativePath.replace(/^\/+/, "");
   const resolved = path.resolve(vaultRoot, cleaned);
 
   const resolvedRoot = path.resolve(vaultRoot);

@@ -77,12 +77,12 @@ describe("resolveVaultPath", () => {
     expect(resolveVaultPath(root, "")).toBe(path.resolve(root));
   });
 
-  it("treats null input as vault root", () => {
-    expect(resolveVaultPath(root, null)).toBe(path.resolve(root));
+  it("returns null for null input", () => {
+    expect(resolveVaultPath(root, null)).toBe(null);
   });
 
-  it("treats undefined input as vault root", () => {
-    expect(resolveVaultPath(root, undefined)).toBe(path.resolve(root));
+  it("returns null for undefined input", () => {
+    expect(resolveVaultPath(root, undefined)).toBe(null);
   });
 
   it("strips leading slashes", () => {

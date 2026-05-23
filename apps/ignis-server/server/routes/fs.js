@@ -263,8 +263,12 @@ router.post("/rename", async (req, res) => {
     return;
   }
 
-  const oldResolved = resolveVaultPath(vaultRoot, req.body?.oldPath);
-  const newResolved = resolveVaultPath(vaultRoot, req.body?.newPath);
+  if (!req.body?.oldPath || !req.body?.newPath) {
+    return res.status(400).json({ error: "Missing oldPath or newPath" });
+  }
+
+  const oldResolved = resolveVaultPath(vaultRoot, req.body.oldPath);
+  const newResolved = resolveVaultPath(vaultRoot, req.body.newPath);
 
   if (!oldResolved || !newResolved) {
     return res.status(403).json({ error: "Invalid path" });
@@ -288,8 +292,12 @@ router.post("/copyFile", async (req, res) => {
     return;
   }
 
-  const srcResolved = resolveVaultPath(vaultRoot, req.body?.src);
-  const destResolved = resolveVaultPath(vaultRoot, req.body?.dest);
+  if (!req.body?.src || !req.body?.dest) {
+    return res.status(400).json({ error: "Missing src or dest" });
+  }
+
+  const srcResolved = resolveVaultPath(vaultRoot, req.body.src);
+  const destResolved = resolveVaultPath(vaultRoot, req.body.dest);
 
   if (!srcResolved || !destResolved) {
     return res.status(403).json({ error: "Invalid path" });
