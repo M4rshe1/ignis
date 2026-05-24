@@ -3,6 +3,7 @@ const path = require("path");
 const express = require("express");
 const { discoverPlugins } = require("./discovery");
 const configStore = require("./config-store");
+const { getVersion } = require("../version");
 
 let discoveredPlugins = new Map();
 const loadedPlugins = new Map();
@@ -171,6 +172,23 @@ async function enablePluginForVault(pluginId, vaultId) {
   if (loaded?.module?.onVaultEnabled) {
     await loaded.module.onVaultEnabled(vaultId, vaultPath);
   }
+
+  // Broadcast to any open tabs on this vault so they load the plugin properly.
+  if (discovered.obsidianPlugin && discovered.bundledPluginId) {
+    const v = `?v=${getVersion()}`;
+    const entry = {
+      id: discovered.bundledPluginId,
+      scriptUrl: `/${discovered.bundledPluginId}.js${v}`,
+      cssUrl: `/${discovered.bundledPluginId}.css${v}`,
+      manifest: discovered.bundledManifest,
+    };
+
+    serverCtx.wss?.broadcastToVault?.(vaultId, {
+      type: "virtual-plugin-enable",
+      vault: vaultId,
+      entry,
+    });
+  }
 }
 
 async function disablePluginForVault(pluginId, vaultId) {
@@ -199,6 +217,14 @@ async function disablePluginForVault(pluginId, vaultId) {
 
   if (updated.length === 0) {
     await unloadPlugin(pluginId);
+  }
+
+  if (discovered.bundledPluginId) {
+    serverCtx.wss?.broadcastToVault?.(vaultId, {
+      type: "virtual-plugin-disable",
+      vault: vaultId,
+      id: discovered.bundledPluginId,
+    });
   }
 }
 

@@ -95,64 +95,44 @@ function display(containerEl, app) {
   addServerStatus(containerEl);
 }
 
-function getWsStatus() {
-  const ws = window.__ignisWs;
+const STATUS_LABELS = {
+  open: "Connected",
+  connecting: "Connecting...",
+  closed: "Disconnected",
+};
 
-  if (!ws) {
-    return "disconnected";
-  }
-
-  switch (ws.readyState) {
-    case WebSocket.CONNECTING:
-      return "connecting";
-    case WebSocket.OPEN:
-      return "connected";
-    case WebSocket.CLOSING:
-    case WebSocket.CLOSED:
-      return "disconnected";
-    default:
-      return "disconnected";
-  }
-}
-
-function statusLabel(status) {
-  switch (status) {
-    case "connected":
-      return "Connected";
-    case "connecting":
-      return "Connecting...";
-    case "disconnected":
-      return "Disconnected";
-    default:
-      return "Unknown";
-  }
-}
+const STATUS_DOT_CLASSES = {
+  open: "ignis-status-connected",
+  connecting: "ignis-status-connecting",
+  closed: "ignis-status-disconnected",
+};
 
 function addServerStatus(containerEl) {
-  const status = getWsStatus();
+  const ws = window.__ignis.ws;
 
   const setting = new Setting(containerEl).setName("Server status");
 
   const dotEl = setting.controlEl.createEl("span", {
-    cls: `ignis-status-dot ignis-status-${status}`,
+    cls: "ignis-status-dot",
   });
 
   const labelEl = setting.controlEl.createEl("span", {
-    text: statusLabel(status),
     cls: "ignis-status-label",
   });
 
-  const update = () => {
-    const s = getWsStatus();
-    dotEl.className = `ignis-status-dot ignis-status-${s}`;
-    labelEl.textContent = statusLabel(s);
-  };
+  function render(state) {
+    dotEl.className = `ignis-status-dot ${STATUS_DOT_CLASSES[state] || STATUS_DOT_CLASSES.closed}`;
+    labelEl.textContent = STATUS_LABELS[state] || STATUS_LABELS.closed;
+  }
 
-  const pollInterval = setInterval(update, 3000);
+  render(ws.isOpen() ? "open" : "closed");
 
+  const unsub = ws.onStateChange(render);
+
+  // Detach when the settings tab DOM goes away.
   const observer = new MutationObserver(() => {
     if (!containerEl.isConnected) {
-      clearInterval(pollInterval);
+      unsub();
       observer.disconnect();
     }
   });

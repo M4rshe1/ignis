@@ -43,8 +43,8 @@ function waitForApp() {
 }
 
 export async function extractObsidianModule() {
-  if (window.__obsidian) {
-    return window.__obsidian;
+  if (window.__ignis.obsidian) {
+    return window.__ignis.obsidian;
   }
 
   await waitForApp();
@@ -97,48 +97,133 @@ export async function extractObsidianModule() {
     return null;
   }
 
-  window.__obsidian = captured;
+  window.__ignis.obsidian = captured;
   registerShim("obsidian", captured);
 
   console.log("[ignis] obsidian module captured");
   return captured;
 }
 
-export async function loadVirtualPlugin(entry) {
-  if (entry.cssUrl) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = entry.cssUrl;
-    link.setAttribute("data-ignis-virtual-plugin", entry.id);
-    document.head.appendChild(link);
-  }
+// Serialize per-id load/unload so rapid toggles can't race.
+const inFlight = new Map();
 
-  const res = await fetch(entry.scriptUrl);
+function serialized(id, fn) {
+  const prev = inFlight.get(id) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  inFlight.set(id, next);
+  next.finally(() => {
+    if (inFlight.get(id) === next) {
+      inFlight.delete(id);
+    }
+  });
+  return next;
+}
 
-  if (!res.ok) {
-    throw new Error(
-      `fetch ${entry.scriptUrl} -> ${res.status} ${res.statusText}`,
+export function loadVirtualPlugin(entry) {
+  return serialized(entry.id, async () => {
+    window.__ignis.plugins = window.__ignis.plugins || {};
+
+    if (window.__ignis.plugins[entry.id]) {
+      console.log(`[ignis] virtual plugin already loaded: ${entry.id}`);
+      return;
+    }
+
+    if (entry.cssUrl) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = entry.cssUrl;
+      link.setAttribute("data-ignis-virtual-plugin", entry.id);
+      document.head.appendChild(link);
+    }
+
+    const res = await fetch(entry.scriptUrl);
+
+    if (!res.ok) {
+      throw new Error(
+        `fetch ${entry.scriptUrl} -> ${res.status} ${res.statusText}`,
+      );
+    }
+
+    const src =
+      (await res.text()) + `\n//# sourceURL=ignis-virtual/${entry.id}.js`;
+
+    const module = { exports: {} };
+    const localRequire = (name) =>
+      name === "obsidian" ? window.__ignis.obsidian : window.require(name);
+
+    new Function("module", "exports", "require", src)(
+      module,
+      module.exports,
+      localRequire,
     );
-  }
 
-  const src =
-    (await res.text()) + `\n//# sourceURL=ignis-virtual/${entry.id}.js`;
+    const PluginClass = module.exports.default || module.exports;
+    const instance = new PluginClass(window.app, entry.manifest);
 
-  const module = { exports: {} };
-  const localRequire = (name) =>
-    name === "obsidian" ? window.__obsidian : window.require(name);
+    // _loaded = true makes instance.unload() walk the Plugin's _register list later.
+    // Cleans up addCommand / addStatusBarItem / addRibbonIcon / addSettingTab / registerEvent.
+    instance._loaded = true;
+    await instance.onload();
 
-  new Function("module", "exports", "require", src)(
-    module,
-    module.exports,
-    localRequire,
-  );
+    window.__ignis.plugins[entry.id] = { instance, manifest: entry.manifest };
+  });
+}
 
-  const PluginClass = module.exports.default || module.exports;
-  const instance = new PluginClass(window.app, entry.manifest);
+export function unloadVirtualPlugin(id) {
+  return serialized(id, async () => {
+    const tracked = window.__ignis?.plugins?.[id];
 
-  await instance.onload();
+    if (!tracked) {
+      return;
+    }
 
-  window.__ignis.plugins = window.__ignis.plugins || {};
-  window.__ignis.plugins[entry.id] = { instance, manifest: entry.manifest };
+    try {
+      await tracked.instance.unload();
+    } catch (e) {
+      reportUnloadFailure(id, e);
+    }
+
+    document
+      .querySelectorAll(`link[data-ignis-virtual-plugin="${id}"]`)
+      .forEach((el) => el.remove());
+
+    delete window.__ignis.plugins[id];
+  });
+}
+
+//TODO: move to ignis API object?
+function notice(text) {
+  try {
+    new window.__ignis.obsidian.Notice(text);
+  } catch {}
+}
+
+export function reportLoadFailure(id, e) {
+  console.error(`[ignis] virtual plugin load failed: ${id}`, e);
+  notice(`Failed to load plugin '${id}': ${e.message}`);
+}
+
+export function reportUnloadFailure(id, e) {
+  console.warn(`[ignis] virtual plugin unload failed: ${id}`, e);
+  notice(`Failed to unload plugin '${id}': ${e.message}`);
+}
+
+export function watchPluginToggles(wsClient) {
+  wsClient.subscribe("virtual-plugin-enable", (msg) => {
+    if (msg.vault !== window.__currentVaultId) {
+      return;
+    }
+
+    loadVirtualPlugin(msg.entry).catch((e) =>
+      reportLoadFailure(msg.entry?.id, e),
+    );
+  });
+
+  wsClient.subscribe("virtual-plugin-disable", (msg) => {
+    if (msg.vault !== window.__currentVaultId) {
+      return;
+    }
+
+    unloadVirtualPlugin(msg.id).catch((e) => reportUnloadFailure(msg.id, e));
+  });
 }

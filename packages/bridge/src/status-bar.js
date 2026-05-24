@@ -1,27 +1,18 @@
-function getWsStatus() {
-  const ws = window.__ignisWs;
-
-  if (!ws) {
-    return "disconnected";
-  }
-
-  switch (ws.readyState) {
-    case WebSocket.CONNECTING:
-      return "connecting";
-    case WebSocket.OPEN:
-      return "connected";
-    default:
-      return "disconnected";
-  }
-}
-
 const STATUS_LABELS = {
-  connected: "Ignis server: Connected",
+  open: "Ignis server: Connected",
   connecting: "Ignis server: Connecting...",
-  disconnected: "Ignis server: Disconnected",
+  closed: "Ignis server: Disconnected",
+};
+
+const STATUS_DOT_CLASSES = {
+  open: "ignis-statusbar-connected",
+  connecting: "ignis-statusbar-connecting",
+  closed: "ignis-statusbar-disconnected",
 };
 
 function initStatusBar(plugin) {
+  const ws = window.__ignis.ws;
+
   const item = plugin.addStatusBarItem();
   item.addClass("ignis-statusbar-item");
 
@@ -29,20 +20,16 @@ function initStatusBar(plugin) {
     cls: "ignis-statusbar-dot",
   });
 
-  item.setAttribute("aria-label", "Ignis: Checking...");
   item.setAttribute("data-tooltip-position", "top");
 
-  const update = () => {
-    const status = getWsStatus();
-    dot.className = `ignis-statusbar-dot ignis-statusbar-${status}`;
-    item.setAttribute("aria-label", STATUS_LABELS[status] || "Ignis: Unknown");
-  };
+  function render(state) {
+    dot.className = `ignis-statusbar-dot ${STATUS_DOT_CLASSES[state] || STATUS_DOT_CLASSES.closed}`;
+    item.setAttribute("aria-label", STATUS_LABELS[state] || STATUS_LABELS.closed);
+  }
 
-  update();
+  render(ws.isOpen() ? "open" : "closed");
 
-  const interval = setInterval(update, 3000);
-
-  return interval;
+  return ws.onStateChange(render);
 }
 
 module.exports = { initStatusBar };

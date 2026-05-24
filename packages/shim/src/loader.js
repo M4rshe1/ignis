@@ -1,17 +1,23 @@
 import { installRequire } from "./require.js";
 import { installGlobals } from "./globals.js";
 import { installCssOverrides } from "./css-overrides.js";
-import { initialize } from "./init.js";
+import { initialize, getBootstrapVirtualPlugins } from "./init.js";
 import { fsShim } from "./fs/index.js";
 import { registerUI } from "./ui-registry.js";
 import {
   extractObsidianModule,
   loadVirtualPlugin,
+  reportLoadFailure,
+  watchPluginToggles,
 } from "./virtual-plugin-loader.js";
+import { wsClient } from "./ws-client.js";
+import { installIgnisApi } from "./ignis-api.js";
 
 // __IGNIS_VERSION__ is replaced at build time from package.json.
 window.__ignis = { version: __IGNIS_VERSION__ };
 window.__ignis_registerUI = registerUI;
+
+installIgnisApi(wsClient);
 
 const BRIDGE_MANIFEST = {
   id: "ignis-bridge",
@@ -38,9 +44,10 @@ if (window.innerWidth < 600) {
 
 initialize(); // vault config, metadata cache, plugin prompt
 
-// Connect file watcher WebSocket after everything is initialized
+// Connect the shared WebSocket after everything is initialized; watcher and live-toggle subscribers attach to the same client.
 if (window.__currentVaultId) {
   fsShim._watcherClient.connect(window.__currentVaultId);
+  watchPluginToggles(wsClient);
 }
 
 extractObsidianModule()
@@ -52,12 +59,12 @@ extractObsidianModule()
     await bridge.onload();
     console.log("[ignis] bridge loaded");
 
-    for (const vp of window.__ignisVirtualPlugins || []) {
+    for (const vp of getBootstrapVirtualPlugins()) {
       try {
         await loadVirtualPlugin(vp);
         console.log(`[ignis] virtual plugin loaded: ${vp.id}`);
       } catch (e) {
-        console.error(`[ignis] virtual plugin load failed: ${vp.id}`, e);
+        reportLoadFailure(vp.id, e);
       }
     }
   })

@@ -195,7 +195,10 @@ const server = app.listen(config.port, async () => {
     .catch((e) => console.warn("[bootstrap] warm-up error:", e.message));
 });
 
-const wss = setupWebSocket(server, { getVaultPath: config.getVaultPath });
+const wss = setupWebSocket(server, {
+  getVaultPath: config.getVaultPath,
+  originAllowlist: config.wsOrigins,
+});
 wireDemoWebSocket(server);
 
 async function gracefulShutdown(signal) {

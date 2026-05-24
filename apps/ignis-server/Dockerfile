@@ -50,14 +50,9 @@ COPY apps/ignis-server/scripts/ ./apps/ignis-server/scripts/
 COPY images/ ./images/
 COPY packages/server-core/src/ ./packages/server-core/src/
 
-# Bridge plugin: manifest + styles for auto-install into vaults; built main.js comes from the build stage.
-COPY packages/bridge/manifest.json ./packages/bridge/
-COPY packages/bridge/styles.css ./packages/bridge/
-
 # Built artifacts from the build stage.
 COPY --from=build /app/packages/shim/dist/shim-loader.js ./packages/shim/dist/shim-loader.js
 COPY --from=build /app/packages/ui/dist/ignis-ui.js ./packages/ui/dist/ignis-ui.js
-COPY --from=build /app/packages/bridge/main.js ./packages/bridge/main.js
 COPY --from=build /app/apps/ignis-server/server/plugins/headless-sync/obsidian/dist/ ./apps/ignis-server/server/plugins/headless-sync/obsidian/dist/
 
 RUN chmod +x /app/apps/ignis-server/scripts/entrypoint.sh
