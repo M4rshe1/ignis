@@ -5,18 +5,13 @@
 // - 5-minute TTL per entry
 // - Entries kept until TTL expires (plugins may read the same file multiple times)
 
+import { normalize } from "../util/path.js";
+
 const MAX_SIZE = 200 * 1024 * 1024;
 const TTL_MS = 5 * 60 * 1000;
 
 const cache = new Map(); // path -> { data, size, createdAt }
 let currentSize = 0;
-
-function normalize(p) {
-  return (p || "")
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
-}
 
 function evictExpired() {
   const now = Date.now();

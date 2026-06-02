@@ -1,16 +1,9 @@
 // Shared echo suppression for file watcher.
-// fs operations mark paths as "locally modified" so the watcher client
-// can skip events that originated from this client.
+// fs operations mark paths as "locally modified" so the watcher client can skip events that originated from this client.
+import { normalize } from "../util/path.js";
 
 const ECHO_SUPPRESS_MS = 1500;
 const recentOps = new Map(); // normalized path -> timestamp
-
-function normalize(p) {
-  return (p || "")
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
-}
 
 export function markLocalOp(path) {
   recentOps.set(normalize(path), Date.now());

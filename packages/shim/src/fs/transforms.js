@@ -2,9 +2,7 @@
 // Path resolvers map logical paths to physical paths; read transforms post-process bytes after a read; write transforms pre-process bytes before a write.
 // All hooks run at the shim's public surface, so caches and transport see only physical paths and as-stored bytes.
 
-function normalize(p) {
-  return (p || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
-}
+import { normalize } from "../util/path.js";
 
 // --- Path resolvers ---
 

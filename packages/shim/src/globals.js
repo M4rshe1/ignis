@@ -4,6 +4,8 @@ import {
   unregisterPopupWindow,
 } from "./electron/remote/window.js";
 import { showVaultManager } from "./ui-registry.js";
+import { arrayBufferToBase64, base64ToArrayBuffer } from "./util/base64.js";
+import { isSameOrigin } from "./util/url.js";
 
 function installProcess() {
   window.process = processShim;
@@ -113,51 +115,6 @@ function installWindowOpen() {
     }
     return _originalOpen.call(window, url, target, features);
   };
-}
-
-function arrayBufferToBase64(buf) {
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  const chunk = 8192;
-
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-
-  return btoa(binary);
-}
-
-function base64ToArrayBuffer(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return bytes.buffer;
-}
-
-export function isSameOrigin(url) {
-  if (
-    !url ||
-    url.startsWith("/") ||
-    url.startsWith("./") ||
-    url.startsWith("../")
-  ) {
-    return true;
-  }
-
-  if (url.startsWith("data:") || url.startsWith("blob:")) {
-    return true;
-  }
-
-  try {
-    const parsed = new URL(url, window.location.origin);
-    return parsed.origin === window.location.origin;
-  } catch {
-    return true;
-  }
 }
 
 function installFetchShim() {

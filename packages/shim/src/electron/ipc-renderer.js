@@ -1,5 +1,6 @@
 import { showVaultManager } from "../ui-registry.js";
 import { vaultService } from "@ignis/services";
+import { arrayBufferToBase64, base64ToArrayBuffer } from "../util/base64.js";
 
 const listeners = new Map();
 
@@ -84,29 +85,6 @@ const syncHandlers = {
   "documents-dir": () => "/documents",
   resources: () => "",
 };
-
-function arrayBufferToBase64(buf) {
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  const chunk = 8192;
-
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-
-  return btoa(binary);
-}
-
-function base64ToArrayBuffer(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return bytes.buffer;
-}
 
 async function handleRequestUrl(requestId, request) {
   try {
