@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const compression = require("compression");
 const config = require("./config");
+const settings = require("./settings");
 const { getVersion } = require("./version");
 const {
   setupWebSocket,
@@ -19,7 +20,7 @@ const {
   getBundledPluginDirs,
 } = require("./plugin-system/manager");
 const pluginRoutes = require("./routes/plugins");
-writeCoalescer.configure({ writeCoalesceMs: config.writeCoalesceMs });
+writeCoalescer.configure({ writeCoalesceMs: settings.get("writeCoalesceMs") });
 const { flushAll } = writeCoalescer;
 const { setupDemo, wireDemoWebSocket } = require("./demo");
 
@@ -197,7 +198,7 @@ const server = app.listen(config.port, async () => {
 
 const wss = setupWebSocket(server, {
   getVaultPath: config.getVaultPath,
-  originAllowlist: config.wsOrigins,
+  originAllowlist: settings.get("wsOrigins"),
 });
 wireDemoWebSocket(server);
 

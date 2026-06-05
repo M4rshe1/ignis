@@ -75,16 +75,6 @@ module.exports = {
     vaults = discoverVaults();
     return vaults;
   },
-  writeCoalesceMs:
-    process.env.WRITE_COALESCE_MS !== undefined
-      ? parseInt(process.env.WRITE_COALESCE_MS)
-      : 5000,
-
-  wsOrigins: process.env.WS_ORIGINS
-    ? process.env.WS_ORIGINS.split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : null,
 
   demoMode: process.env.DEMO_MODE === "true",
   demoMaxSessions: parseInt(process.env.DEMO_MAX_SESSIONS) || 20,
