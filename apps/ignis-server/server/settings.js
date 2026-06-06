@@ -19,6 +19,9 @@ const DEFAULTS = {
 
 const KEYS = Object.keys(DEFAULTS);
 
+// Hard ceiling for request bodies.
+const MAX_BODY_BACKSTOP = 500 * 1024 * 1024;
+
 function parseList(raw) {
   return raw
     .split(",")
@@ -88,4 +91,4 @@ function update(partial) {
   return getAll();
 }
 
-module.exports = { DEFAULTS, KEYS, getAll, get, update };
+module.exports = { DEFAULTS, KEYS, MAX_BODY_BACKSTOP, getAll, get, update };

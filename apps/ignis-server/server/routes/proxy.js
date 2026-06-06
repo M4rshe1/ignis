@@ -1,6 +1,7 @@
 const express = require("express");
 const dns = require("dns").promises;
 const net = require("net");
+const settings = require("../settings");
 
 const router = express.Router();
 
@@ -103,6 +104,19 @@ router.post("/", async (req, res) => {
     await assertPublicUrl(url);
   } catch (e) {
     return res.status(e.statusCode || 400).json({ error: e.message });
+  }
+
+  // When a host allowlist is defined , the proxy only reaches those hosts.
+  const allowlist = settings.get("proxyAllowlist");
+
+  if (allowlist.length > 0) {
+    const host = new URL(url).hostname;
+
+    if (!allowlist.includes(host)) {
+      return res
+        .status(403)
+        .json({ error: `Host not in proxy allowlist: ${host}` });
+    }
   }
 
   try {

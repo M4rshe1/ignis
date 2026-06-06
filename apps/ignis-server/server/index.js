@@ -33,7 +33,18 @@ const ANSI_RESET = "\x1b[0m";
 
 const app = express();
 
-app.use(express.json({ limit: "50mb" }));
+// Reject oversized requests by Content-Length before parsing.
+app.use((req, res, next) => {
+  const declared = Number(req.headers["content-length"]);
+
+  if (Number.isFinite(declared) && declared > settings.get("maxBodyBytes")) {
+    return res.status(413).json({ error: "Request body too large" });
+  }
+
+  next();
+});
+
+app.use(express.json({ limit: settings.MAX_BODY_BACKSTOP }));
 app.use(compression());
 
 // logger middleware
@@ -67,6 +78,7 @@ const fsRoutes = require("./routes/fs");
 const vaultRoutes = require("./routes/vault");
 const proxyRoutes = require("./routes/proxy");
 const versionRoutes = require("./routes/version");
+const settingsRoutes = require("./routes/settings");
 const bootstrapRoutes = require("./routes/bootstrap");
 
 app.use("/assets", express.static(path.join(__dirname, "assets")));
@@ -79,6 +91,7 @@ app.use("/api/fs", fsRoutes);
 app.use("/api/vault", vaultRoutes);
 app.use("/api/proxy", proxyRoutes);
 app.use("/api/version", versionRoutes);
+app.use("/api/settings", settingsRoutes);
 app.use("/api/plugins", pluginRoutes);
 app.use("/api/bootstrap", bootstrapRoutes);
 
@@ -200,6 +213,7 @@ const wss = setupWebSocket(server, {
   getVaultPath: config.getVaultPath,
   originAllowlist: settings.get("wsOrigins"),
 });
+app.set("wss", wss);
 wireDemoWebSocket(server);
 
 async function gracefulShutdown(signal) {

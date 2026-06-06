@@ -70,6 +70,11 @@ function setupDemo(app) {
   // Hide server-side plugins (headless-sync) from the demo UI
   app.use("/api/plugins", pluginsBlocker);
 
+  // Server settings are-fixed in demo mode.
+  app.use("/api/settings", (req, res) => {
+    res.status(403).json({ error: "Settings are disabled in demo mode" });
+  });
+
   // Cleanup timer
   const interval = setInterval(() => {
     cleanupExpired().catch((e) =>

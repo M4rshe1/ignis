@@ -14,6 +14,7 @@ const {
   getVirtualPluginsForVault,
 } = require("../plugin-system/manager");
 const { getVersion } = require("../version");
+const settings = require("../settings");
 
 const router = express.Router();
 
@@ -140,6 +141,11 @@ async function buildEntry(vaultId) {
     // In demo mode, hide server-side plugins from the client.
     plugins: config.demoMode ? [] : getDiscoveredPlugins(),
     virtualPlugins: getVirtualPluginsForVault(vaultId, getVersion()),
+    settings: {
+      contentCacheBytes: settings.get("contentCacheBytes"),
+      inputCacheBytes: settings.get("inputCacheBytes"),
+      inputCacheTtlMs: settings.get("inputCacheTtlMs"),
+    },
   };
 
   const jsonBuf = Buffer.from(JSON.stringify(response));
@@ -183,6 +189,10 @@ async function getOrBuild(vaultId) {
 
 function invalidateVault(vaultId) {
   cache.delete(vaultId);
+}
+
+function invalidateAll() {
+  cache.clear();
 }
 
 async function warmUp() {
@@ -251,4 +261,5 @@ router.get("/", async (req, res) => {
 
 module.exports = router;
 module.exports.invalidateVault = invalidateVault;
+module.exports.invalidateAll = invalidateAll;
 module.exports.warmUp = warmUp;
