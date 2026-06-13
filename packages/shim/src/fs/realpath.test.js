@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { realpath } from "./realpath.js";
+import { createFsPromises } from "./promises.js";
 
 describe("fs realpath shim", () => {
   it("realpath invokes the callback with the path", async () => {
@@ -16,5 +17,20 @@ describe("fs realpath shim", () => {
     );
 
     expect(result).toBe("/a/b.md");
+  });
+});
+
+describe("fs.promises realpath", () => {
+  it("answers locally without touching the transport", async () => {
+    const fs = createFsPromises({}, {}, {});
+
+    expect(await fs.realpath("/a/b.md")).toBe("/a/b.md");
+  });
+
+  it("maps empty and root paths to /", async () => {
+    const fs = createFsPromises({}, {}, {});
+
+    expect(await fs.realpath("")).toBe("/");
+    expect(await fs.realpath(".")).toBe("/");
   });
 });

@@ -16,6 +16,13 @@ function newSessionId() {
   return crypto.randomBytes(12).toString("hex");
 }
 
+// accept only the format we issue.
+const SESSION_ID_RE = /^[a-f0-9]{24}$/;
+
+function isValidSessionId(id) {
+  return typeof id === "string" && SESSION_ID_RE.test(id);
+}
+
 function prefixFor(sessionId) {
   return "demo-" + sessionId + PREFIX_SEPARATOR;
 }
@@ -61,20 +68,25 @@ function setSessionCookie(res, sessionId) {
 
   res.setHeader(
     "Set-Cookie",
-    `${COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`,
+    `${COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`,
   );
 }
 
 // Resolve the session for a request. If none exists, create one (unless options.peek is true).
 function getOrCreateSession(req, res, options = {}) {
   const cookies = parseCookies(req);
-  const existing = cookies[COOKIE_NAME];
+  const raw = cookies[COOKIE_NAME];
+  const existing = isValidSessionId(raw) ? raw : null;
 
   if (existing && sessions.has(existing)) {
     return existing;
   }
 
   if (existing && !sessions.has(existing)) {
+    if (sessions.size >= config.demoMaxSessions) {
+      return null;
+    }
+
     // Cookie outlived in-memory session. reuse the id to keep the prefix.
     sessions.set(existing, {
       lastActivity: Date.now(),

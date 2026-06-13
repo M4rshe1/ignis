@@ -177,13 +177,6 @@ export const transport = {
     return requestJson("GET", "/access", { path: normPath(path) });
   },
 
-  async realpath(path) {
-    const result = await requestJson("GET", "/realpath", {
-      path: normPath(path),
-    });
-    return result.path;
-  },
-
   async utimes(path, atime, mtime) {
     return requestJson("POST", "/utimes", {
       path: normPath(path),

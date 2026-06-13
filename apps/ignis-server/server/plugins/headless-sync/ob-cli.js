@@ -3,8 +3,6 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const isWindows = process.platform === "win32";
-
 // When set via configure(), HOME for the spawned ob points under the plugin's data dir so
 // ob's config dir (~/.config/obsidian-headless/) survives container recreates.
 let configuredDataDir = null;
@@ -39,13 +37,11 @@ function checkInstalled() {
 }
 
 function spawnOb(args, opts = {}) {
-  const home = configuredDataDir
-    ? getObHome(configuredDataDir)
-    : os.homedir();
+  const home = configuredDataDir ? getObHome(configuredDataDir) : os.homedir();
 
   return spawn("ob", args, {
     env: { ...process.env, HOME: home },
-    shell: isWindows,
+    shell: false,
     windowsHide: true,
     ...opts,
   });

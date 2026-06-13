@@ -1,9 +1,8 @@
-// File descriptor shim  -  maps fake integer fds to in-memory file buffers.
-// Enables libraries like yauzl that use fs.open/fs.read/fs.close to seek
-// around files without loading them via readFileSync upfront.
+// File descriptor shim. Maps fake integer fds to in-memory file buffers.
 
 import { isInputCachePath, inputCacheGet } from "./input-cache.js";
 import { resolvePath } from "./transforms.js";
+import { hasVirtualFile, getVirtualFile } from "./virtual-files.js";
 
 let nextFd = 100;
 const openFiles = new Map();
@@ -24,6 +23,15 @@ export function createFdOps(metadataCache, contentCache, transport) {
     }
 
     const resolved = resolvePath(path);
+
+    if (hasVirtualFile(resolved)) {
+      const content = getVirtualFile(resolved);
+
+      return typeof content === "string"
+        ? new TextEncoder().encode(content)
+        : content;
+    }
+
     const cached = contentCache.get(resolved);
 
     if (cached !== null) {
@@ -60,7 +68,11 @@ export function createFdOps(metadataCache, contentCache, transport) {
     const hasInCache = isInputCachePath(path) && inputCacheGet(path) !== null;
     const resolved = resolvePath(path);
 
-    if (!hasInCache && !metadataCache.has(resolved)) {
+    if (
+      !hasInCache &&
+      !hasVirtualFile(resolved) &&
+      !metadataCache.has(resolved)
+    ) {
       const err = new Error(
         `ENOENT: no such file or directory, open '${path}'`,
       );

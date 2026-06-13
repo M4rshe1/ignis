@@ -80,6 +80,14 @@ async function provisionVault(sessionId, userVaultName) {
   const storageName = makeStorageName(sessionId, userVaultName);
   const vaultPath = path.join(config.vaultRoot, storageName);
 
+  // keep the resolved path inside the vault root.
+  const root = path.resolve(config.vaultRoot);
+  const resolved = path.resolve(vaultPath);
+
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    return { error: "invalid-vault-name" };
+  }
+
   await fsp.mkdir(config.vaultRoot, { recursive: true });
 
   try {

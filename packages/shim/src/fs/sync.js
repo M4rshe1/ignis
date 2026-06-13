@@ -5,6 +5,7 @@ import {
   applyWriteTransform,
   resolvePath,
 } from "./transforms.js";
+import { hasVirtualFile, getVirtualFile } from "./virtual-files.js";
 
 export function createFsSync(metadataCache, contentCache, transport) {
   return {
@@ -69,6 +70,21 @@ export function createFsSync(metadataCache, contentCache, transport) {
 
       const wantText = encoding === "utf8" || encoding === "utf-8";
       const resolved = resolvePath(path);
+
+      // Virtual plugin source overrides any cache or transport version.
+      if (hasVirtualFile(resolved)) {
+        const content = getVirtualFile(resolved);
+
+        if (wantText) {
+          return typeof content === "string"
+            ? content
+            : new TextDecoder().decode(content);
+        }
+
+        return typeof content === "string"
+          ? new TextEncoder().encode(content)
+          : content;
+      }
 
       const meta = metadataCache.get(resolved);
       if (meta && meta.type === "directory") {

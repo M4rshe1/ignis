@@ -2,7 +2,7 @@
 function isSameOrigin(url) {
   if (
     !url ||
-    url.startsWith("/") ||
+    (url.startsWith("/") && !url.startsWith("//")) ||
     url.startsWith("./") ||
     url.startsWith("../")
   ) {

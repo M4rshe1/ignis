@@ -98,7 +98,7 @@ router.get("/stat", async (req, res) => {
   } catch (e) {
     res
       .status(e.code === "ENOENT" ? 404 : 500)
-      .json({ error: e.message, code: e.code });
+      .json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -133,7 +133,7 @@ router.get("/readdir", async (req, res) => {
   } catch (e) {
     res
       .status(e.code === "ENOENT" ? 404 : 500)
-      .json({ error: e.message, code: e.code });
+      .json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -184,7 +184,7 @@ router.get("/readFile", async (req, res) => {
   } catch (e) {
     res
       .status(e.code === "ENOENT" ? 404 : 500)
-      .json({ error: e.message, code: e.code });
+      .json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -213,7 +213,7 @@ router.post("/writeFile", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true, mtime: result.mtime, size: result.size });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -231,7 +231,7 @@ router.post("/appendFile", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -251,7 +251,7 @@ router.post("/mkdir", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -280,7 +280,7 @@ router.post("/rename", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -309,7 +309,7 @@ router.post("/copyFile", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -331,7 +331,7 @@ router.delete("/unlink", async (req, res) => {
       // File already gone  -  desired outcome achieved
       res.json({ ok: true });
     } else {
-      res.status(500).json({ error: e.message, code: e.code });
+      res.status(500).json({ error: e.code || "internal", code: e.code });
     }
   }
 });
@@ -350,7 +350,7 @@ router.delete("/rmdir", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -370,7 +370,7 @@ router.delete("/rm", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -388,23 +388,7 @@ router.get("/access", async (req, res) => {
   } catch (e) {
     res
       .status(e.code === "ENOENT" ? 404 : 500)
-      .json({ error: e.message, code: e.code });
-  }
-});
-
-router.get("/realpath", async (req, res) => {
-  const resolved = guardPath(req, res);
-
-  if (!resolved) {
-    return;
-  }
-
-  try {
-    const real = await fs.promises.realpath(resolved);
-
-    res.json({ path: path.relative(req._vaultRoot, real) });
-  } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+      .json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -426,7 +410,7 @@ router.post("/utimes", async (req, res) => {
     invalidateBootstrap(req);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -440,6 +424,11 @@ router.post("/batch-read", async (req, res) => {
   }
 
   const paths = Array.isArray(req.body?.paths) ? req.body.paths : [];
+
+  // The indexer prefetcher (the only caller) batches at 50, so a much larger list is not legitimate.
+  if (paths.length > 1000) {
+    return res.status(400).json({ error: "too many paths in batch-read" });
+  }
 
   if (paths.length === 0) {
     return res.json({ files: {} });
@@ -531,7 +520,7 @@ router.get("/tree", async (req, res) => {
 
     res.json(tree);
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -561,7 +550,7 @@ router.get("/download", async (req, res) => {
   } catch (e) {
     res
       .status(e.code === "ENOENT" ? 404 : 500)
-      .json({ error: e.message, code: e.code });
+      .json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -599,7 +588,7 @@ router.get("/download-zip", async (req, res) => {
   } catch (e) {
     res
       .status(e.code === "ENOENT" ? 404 : 500)
-      .json({ error: e.message, code: e.code });
+      .json({ error: e.code || "internal", code: e.code });
   }
 });
 

@@ -75,13 +75,28 @@ To build from source instead of pulling the image, clone the repo and run `docke
 | `DATA_ROOT` | Path to persistent data (plugin config, sync state, auth tokens) | `/app/data` |
 | `OBSIDIAN_VERSION` | Obsidian version to download | `1.12.7` |
 | `OBSIDIAN_ASSETS_PATH` | Where the extracted Obsidian app files live. Override if you're pointing at a pre-extracted directory instead of letting the entrypoint download. | `/app/obsidian-app` |
+| `OBSIDIAN_PACKAGE` | Path to a pre-placed Obsidian package to unpack on first run instead of downloading, for offline or restricted networks. Accepts `.deb` (the form obsidian.md distributes), `.asar.gz`, or `.asar`. | unset |
 | `AUTO_CREATE_DEFAULT` | When `true`, creates a "My Vault" vault on startup if no vaults exist. Useful for fresh installs. | `false` |
 | `PUID` | User ID for file ownership | `1000` |
 | `PGID` | Group ID for file ownership | `1000` |
 | `WRITE_COALESCE_MS` | Debounce window (ms) for rapid writes. On slow filesystems (rclone, NFS, SMB), set an appropriate duration. | `0` |
 | `WS_ORIGINS` | Comma-separated allowlist of `Origin` headers accepted on the WebSocket endpoint. When unset, any origin is accepted. | unset |
+| `PROXY_ALLOW_PRIVATE_HOSTS` | Comma-separated IPs or IPv4 CIDRs the cross-origin proxy may reach despite the private-address block, for LAN services. Matched against the resolved IP. Reopens SSRF to the listed targets. | unset |
 
 Demo mode adds its own set of env vars (per-session vaults, auto-cleanup, proxy allowlist, login blocking). See [`examples/demo/`](examples/demo/) if you want to run a public demo deployment.
+
+## Offline / restricted-network install
+
+If the container can't reach GitHub on first run (air-gapped or restricted networks), download Obsidian yourself from [obsidian.md](https://obsidian.md/download) (the `.deb`), mount it into the container, and point `OBSIDIAN_PACKAGE` at it:
+
+```yaml
+    volumes:
+      - ./obsidian_1.12.7_amd64.deb:/packages/obsidian.deb:ro
+    environment:
+      - OBSIDIAN_PACKAGE=/packages/obsidian.deb
+```
+
+On first run the entrypoint unpacks that instead of downloading. Match the version this release pins (see the OCI label and CHANGELOG); a mismatch logs a warning and still boots. `.asar.gz` and `.asar` are also accepted.
 
 ## Migrating an existing vault
 

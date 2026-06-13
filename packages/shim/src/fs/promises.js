@@ -6,6 +6,7 @@ import {
   resolvePath,
 } from "./transforms.js";
 import { hasVirtualFile, getVirtualFile } from "./virtual-files.js";
+import { realpathSync } from "./realpath.js";
 
 export function createFsPromises(metadataCache, contentCache, transport) {
   return {
@@ -260,7 +261,8 @@ export function createFsPromises(metadataCache, contentCache, transport) {
         return "/";
       }
 
-      return transport.realpath(path);
+      // No symlinks in the vault FS, so realpath is the identity.
+      return realpathSync(path);
     },
 
     async utimes(path, atime, mtime) {

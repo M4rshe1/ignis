@@ -17,6 +17,8 @@ const DEFAULTS = {
   // Empty allows any public host.
   proxyAllowlist: [],
   wsOrigins: [],
+  // Private IPs/CIDRs the proxy may reach despite the SSRF guard.
+  proxyAllowPrivate: [],
 };
 
 const PROXY_MODES = ["any", "allowlist", "disabled"];
@@ -24,7 +26,7 @@ const PROXY_MODES = ["any", "allowlist", "disabled"];
 const KEYS = Object.keys(DEFAULTS);
 
 // Env vars only; never persisted to the settings file.
-const ENV_ONLY_KEYS = ["wsOrigins"];
+const ENV_ONLY_KEYS = ["wsOrigins", "proxyAllowPrivate"];
 
 // Hard ceiling for request bodies.
 const MAX_BODY_BACKSTOP = 500 * 1024 * 1024;
@@ -49,6 +51,10 @@ function fromEnv() {
 
   if (process.env.WS_ORIGINS) {
     env.wsOrigins = parseList(process.env.WS_ORIGINS);
+  }
+
+  if (process.env.PROXY_ALLOW_PRIVATE_HOSTS) {
+    env.proxyAllowPrivate = parseList(process.env.PROXY_ALLOW_PRIVATE_HOSTS);
   }
 
   return env;

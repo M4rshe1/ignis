@@ -6,6 +6,25 @@ const bootstrapRoutes = require("./bootstrap");
 
 const router = express.Router();
 
+// Vault names become directories under VAULT_ROOT; reject traversal, hidden, and reserved-device names.
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+function isValidVaultName(name) {
+  if (typeof name !== "string" || name.length === 0 || name.length > 255) {
+    return false;
+  }
+
+  if (/[\/\\:*?"<>|]/.test(name)) {
+    return false;
+  }
+
+  if (name.startsWith(".")) {
+    return false;
+  }
+
+  return !WINDOWS_RESERVED.test(name);
+}
+
 // GET /api/vault/list - returns all discovered vaults (re-scans on each call)
 router.get("/list", (req, res) => {
   config.refreshVaults();
@@ -41,7 +60,7 @@ router.get("/info", async (req, res) => {
 router.post("/create", async (req, res) => {
   const name = req.body?.name;
 
-  if (!name || /[\/\\:*?"<>|]/.test(name)) {
+  if (!isValidVaultName(name)) {
     return res.status(400).json({ error: "Invalid vault name" });
   }
 
@@ -62,7 +81,7 @@ router.post("/create", async (req, res) => {
       return res.status(409).json({ error: "Vault already exists" });
     }
 
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -71,7 +90,7 @@ router.post("/rename", async (req, res) => {
   const vaultId = req.body?.vault;
   const newName = req.body?.name;
 
-  if (!newName || /[\/\\:*?"<>|]/.test(newName)) {
+  if (!isValidVaultName(newName)) {
     return res.status(400).json({ error: "Invalid vault name" });
   }
 
@@ -98,7 +117,7 @@ router.post("/rename", async (req, res) => {
         .json({ error: "A vault with that name already exists" });
     }
 
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 
@@ -119,7 +138,7 @@ router.delete("/remove", async (req, res) => {
 
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message, code: e.code });
+    res.status(500).json({ error: e.code || "internal", code: e.code });
   }
 });
 

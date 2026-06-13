@@ -70,6 +70,11 @@ function setupDemo(app) {
   // Hide server-side plugins (headless-sync) from the demo UI
   app.use("/api/plugins", pluginsBlocker);
 
+  // Plugin routes are not exposed in demo mode.
+  app.use("/api/ext", (req, res) => {
+    res.status(403).json({ error: "Plugin routes are disabled in demo mode" });
+  });
+
   // Server settings are-fixed in demo mode.
   app.use("/api/settings", (req, res) => {
     res.status(403).json({ error: "Settings are disabled in demo mode" });

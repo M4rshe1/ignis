@@ -10,6 +10,7 @@ const {
   sessions,
   parseCookies,
   makeStorageName,
+  tryParseUserVaultName,
   touchSession,
 } = require("./demo-sessions");
 
@@ -28,6 +29,20 @@ function wireWebSocket(server) {
         if (userVault && !userVault.startsWith("demo-")) {
           u.searchParams.set("vault", makeStorageName(sessionId, userVault));
           req.url = u.pathname + u.search;
+        } else if (
+          userVault &&
+          userVault.startsWith("demo-") &&
+          tryParseUserVaultName(sessionId, userVault) === null
+        ) {
+          // An already-prefixed vault that isn't this session's: refuse the upgrade.
+          const socket = rest[0];
+
+          if (socket && socket.writable) {
+            socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+            socket.destroy();
+          }
+
+          return;
         }
 
         touchSession(sessionId);

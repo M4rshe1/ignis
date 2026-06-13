@@ -1,11 +1,16 @@
 const express = require("express");
-const dns = require("dns").promises;
+const dns = require("dns");
 const net = require("net");
+const http = require("http");
+const https = require("https");
+const zlib = require("zlib");
 const settings = require("../settings");
 
 const router = express.Router();
 
 const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
+const REDIRECT_CODES = new Set([301, 302, 303, 307, 308]);
 
 function isPrivateIp(ip) {
   const type = net.isIP(ip);
@@ -47,13 +52,116 @@ function isPrivateIp(ip) {
   return false;
 }
 
+function ipv4ToInt(ip) {
+  return ip
+    .split(".")
+    .reduce((acc, oct) => ((acc << 8) + Number(oct)) >>> 0, 0);
+}
+
+// Parse PROXY_ALLOW_PRIVATE_HOSTS into matchers.
+// Exact IPs (v4 and v6) and IPv4 CIDRs are supported; IPv6 CIDR and malformed entries are ignored.
+function buildAllowList(entries) {
+  const exact = new Set();
+  const cidrV4 = [];
+
+  for (const entry of entries) {
+    const slash = entry.indexOf("/");
+
+    if (slash === -1) {
+      if (net.isIP(entry)) {
+        exact.add(entry);
+      } else {
+        console.warn(
+          "[proxy] ignoring invalid PROXY_ALLOW_PRIVATE_HOSTS entry:",
+          entry,
+        );
+      }
+
+      continue;
+    }
+
+    const base = entry.slice(0, slash);
+    const prefix = Number(entry.slice(slash + 1));
+
+    if (
+      net.isIP(base) === 4 &&
+      Number.isInteger(prefix) &&
+      prefix >= 0 &&
+      prefix <= 32
+    ) {
+      const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+      cidrV4.push({ network: (ipv4ToInt(base) & mask) >>> 0, mask });
+    } else {
+      console.warn(
+        "[proxy] ignoring unsupported PROXY_ALLOW_PRIVATE_HOSTS entry:",
+        entry,
+      );
+    }
+  }
+
+  return { exact, cidrV4 };
+}
+
+function allowsAddress(allow, ip) {
+  if (allow.exact.has(ip)) {
+    return true;
+  }
+
+  if (net.isIP(ip) === 4) {
+    const value = ipv4ToInt(ip);
+
+    for (const { network, mask } of allow.cidrV4) {
+      if ((value & mask) >>> 0 === network) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+const privateAllowList = buildAllowList(settings.get("proxyAllowPrivate"));
+
+// A public address always passes; a private one passes only when listed it in PROXY_ALLOW_PRIVATE_HOSTS.
+function addressAllowed(ip) {
+  return !isPrivateIp(ip) || allowsAddress(privateAllowList, ip);
+}
+
 function httpError(status, message) {
   const e = new Error(message);
   e.statusCode = status;
   return e;
 }
 
-// Reject non-http(s) schemes and hosts that resolve to a private or link-local address.
+function safeLookup(hostname, options, callback) {
+  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) {
+      callback(err);
+      return;
+    }
+
+    if (!addresses.length) {
+      callback(httpError(502, "DNS resolution failed"));
+      return;
+    }
+
+    for (const a of addresses) {
+      if (!addressAllowed(a.address)) {
+        callback(httpError(403, "Host resolves to a private address"));
+        return;
+      }
+    }
+
+    if (options && options.all) {
+      callback(null, addresses);
+      return;
+    }
+
+    callback(null, addresses[0].address, addresses[0].family);
+  });
+}
+
+// Reject non-http(s) schemes and hosts that resolve to a disallowed address.
 async function assertPublicUrl(urlStr) {
   let parsed;
 
@@ -70,7 +178,7 @@ async function assertPublicUrl(urlStr) {
   const host = parsed.hostname;
 
   if (net.isIP(host)) {
-    if (isPrivateIp(host)) {
+    if (!addressAllowed(host)) {
       throw httpError(403, "Host not allowed");
     }
 
@@ -80,16 +188,159 @@ async function assertPublicUrl(urlStr) {
   let addrs;
 
   try {
-    addrs = await dns.lookup(host, { all: true });
+    addrs = await dns.promises.lookup(host, { all: true });
   } catch {
     throw httpError(502, "DNS resolution failed");
   }
 
   for (const a of addrs) {
-    if (isPrivateIp(a.address)) {
+    if (!addressAllowed(a.address)) {
       throw httpError(403, "Host resolves to a private address");
     }
   }
+}
+
+function sameOrigin(a, b) {
+  return a.protocol === b.protocol && a.host === b.host;
+}
+
+function requestOnce(targetUrl, method, headers, body) {
+  return new Promise((resolve, reject) => {
+    const mod = targetUrl.protocol === "https:" ? https : http;
+    const req = mod.request(
+      targetUrl,
+      { method, headers, lookup: safeLookup },
+      resolve,
+    );
+
+    req.on("error", reject);
+
+    if (body && method !== "GET" && method !== "HEAD") {
+      req.write(body);
+    }
+
+    req.end();
+  });
+}
+
+// Follow redirects manually so every hop runs through safeLookup and is re-checked.
+async function proxyRequest({ url, method, headers, body }) {
+  let current = new URL(url);
+  let currentMethod = method;
+  let currentHeaders = headers;
+  let currentBody = body;
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (current.protocol !== "http:" && current.protocol !== "https:") {
+      throw httpError(400, "Only http and https URLs are allowed");
+    }
+
+    // An IP-literal host skips DNS, so safeLookup never runs for it; check it here.
+    if (net.isIP(current.hostname) && !addressAllowed(current.hostname)) {
+      throw httpError(403, "Host not allowed");
+    }
+
+    const res = await requestOnce(
+      current,
+      currentMethod,
+      currentHeaders,
+      currentBody,
+    );
+
+    if (!REDIRECT_CODES.has(res.statusCode) || !res.headers.location) {
+      return res;
+    }
+
+    res.resume();
+    const next = new URL(res.headers.location, current);
+
+    // The caller did not choose the redirect target, so credentials do not cross origins.
+    if (!sameOrigin(current, next)) {
+      currentHeaders = { ...currentHeaders };
+
+      for (const key of Object.keys(currentHeaders)) {
+        const lower = key.toLowerCase();
+
+        if (lower === "authorization" || lower === "cookie") {
+          delete currentHeaders[key];
+        }
+      }
+    }
+
+    // 301/302/303 turn a non-GET follow-up into a GET; 307/308 preserve method and body.
+    if (res.statusCode !== 307 && res.statusCode !== 308) {
+      if (currentMethod !== "GET" && currentMethod !== "HEAD") {
+        currentMethod = "GET";
+        currentBody = null;
+      }
+    }
+
+    current = next;
+  }
+
+  throw httpError(508, "Too many redirects");
+}
+
+function readBody(res, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const encoding = (res.headers["content-encoding"] || "").toLowerCase();
+    let stream = res;
+    let decompressor = null;
+
+    if (encoding === "gzip" || encoding === "x-gzip") {
+      decompressor = zlib.createGunzip();
+    } else if (encoding === "deflate") {
+      decompressor = zlib.createInflate();
+    } else if (encoding === "br") {
+      decompressor = zlib.createBrotliDecompress();
+    }
+
+    if (decompressor) {
+      stream = res.pipe(decompressor);
+    }
+
+    const chunks = [];
+    let total = 0;
+    let settled = false;
+
+    function fail(err) {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      res.destroy();
+
+      if (decompressor) {
+        decompressor.destroy();
+      }
+
+      reject(err);
+    }
+
+    stream.on("data", (chunk) => {
+      total += chunk.length;
+
+      if (total > maxBytes) {
+        fail(httpError(413, "Upstream response too large"));
+        return;
+      }
+
+      chunks.push(chunk);
+    });
+
+    stream.on("end", () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(Buffer.concat(chunks));
+    });
+
+    stream.on("error", (e) => fail(httpError(502, e.message)));
+    res.on("error", (e) => fail(httpError(502, e.message)));
+  });
 }
 
 // POST /api/proxy - forward a request to an external URL to bypass CORS.
@@ -124,40 +375,29 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    // Forward the caller's headers as-is.
-    const fetchOpts = {
+    const reqBody =
+      binary && typeof body === "string" ? Buffer.from(body, "base64") : body;
+
+    const upstream = await proxyRequest({
+      url,
       method: method || "GET",
       headers: headers || {},
-    };
+      body: reqBody,
+    });
 
-    if (body && method !== "GET" && method !== "HEAD") {
-      if (binary && typeof body === "string") {
-        fetchOpts.body = Buffer.from(body, "base64");
-      } else {
-        fetchOpts.body = body;
-      }
-    }
-
-    const upstream = await fetch(url, fetchOpts);
-
-    const declaredLength = Number(upstream.headers.get("content-length"));
+    const declaredLength = Number(upstream.headers["content-length"]);
 
     if (
       Number.isFinite(declaredLength) &&
       declaredLength > MAX_RESPONSE_BYTES
     ) {
+      upstream.destroy();
       return res.status(413).json({ error: "Upstream response too large" });
     }
 
-    const respArrayBuf = await upstream.arrayBuffer();
+    const respBody = await readBody(upstream, MAX_RESPONSE_BYTES);
 
-    if (respArrayBuf.byteLength > MAX_RESPONSE_BYTES) {
-      return res.status(413).json({ error: "Upstream response too large" });
-    }
-
-    const respBody = Buffer.from(respArrayBuf);
-
-    // Strip hop-by-hop / encoding headers since the body is already decompressed.
+    // Strip hop-by-hop and encoding headers; the body is already decompressed.
     const skipHeaders = new Set([
       "content-encoding",
       "transfer-encoding",
@@ -166,21 +406,24 @@ router.post("/", async (req, res) => {
     ]);
     const respHeaders = {};
 
-    upstream.headers.forEach((val, key) => {
-      if (!skipHeaders.has(key)) {
+    for (const [key, val] of Object.entries(upstream.headers)) {
+      if (!skipHeaders.has(key.toLowerCase())) {
         respHeaders[key] = val;
       }
-    });
+    }
 
     res.json({
-      status: upstream.status,
+      status: upstream.statusCode,
       headers: respHeaders,
       body: respBody.toString("base64"),
     });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    res.status(e.statusCode || 502).json({ error: e.message });
   }
 });
 
 module.exports = router;
 module.exports.isPrivateIp = isPrivateIp;
+module.exports.proxyRequest = proxyRequest;
+module.exports.buildAllowList = buildAllowList;
+module.exports.allowsAddress = allowsAddress;
