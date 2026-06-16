@@ -208,8 +208,27 @@ function initCoreSyncGuardFallback() {
   }
 }
 
+// Reflect the priority prefetch's byte progress on the boot splash so the awaited slice reads as active rather than hung.
+// The splash logo keeps pulsing through a transit stall, when the byte count would otherwise freeze.
+function updateBootProgress(received, total) {
+  // Once the injector starts appending Obsidian's scripts it owns the splash label, so stop writing progress over it.
+  if (window.__ignisBootStarted) {
+    return;
+  }
+
+  const label = document.getElementById("ignis-status-label");
+
+  if (!label || !total) {
+    return;
+  }
+
+  const mb = (n) => (n / (1024 * 1024)).toFixed(1);
+  label.textContent = `Loading plugins... ${mb(received)}/${mb(total)} MB`;
+}
+
 export function initialize() {
   if (maybeProvisionDemoVault()) {
+    window.__ignisBootReady = Promise.resolve();
     return;
   }
 
@@ -229,14 +248,19 @@ export function initialize() {
     bootstrapVirtualPlugins = bootstrap.virtualPlugins || [];
     applyServerSettings(bootstrap.settings);
 
-    // Race the indexer: batch-fetch text content into ContentCache so
-    // Obsidian's startup indexing reads hit the cache instead of the network.
-    prefetchVaultContent(
+    // Warm the caches before Obsidian boots.
+    // The priority slice (configs and plugin entry files) resolves window.__ignisBootReady, which the index.html injector waits on before appending Obsidian's scripts, so Obsidian's early reads hit the cache.
+    // The bulk slice streams afterward without blocking boot.
+    const { priority } = prefetchVaultContent(
       window.__currentVaultId,
       bootstrap.tree,
       fsShim._contentCache,
+      { onProgress: updateBootProgress },
     );
+
+    window.__ignisBootReady = priority;
   } else {
+    window.__ignisBootReady = Promise.resolve();
     initVaultConfigFallback();
     initVaultListFallback();
     initMetadataCacheFallback();
