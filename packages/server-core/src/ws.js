@@ -9,8 +9,8 @@ function toOriginSet(list) {
 
 const HEARTBEAT_INTERVAL_MS = 30000;
 
-// Terminates sockets that have not ponged since the previous sweep, and pings the rest.
-// A socket silently dropped by an idle-timeout proxy fails the next isAlive check and is terminated.
+// Pings each live client every sweep so the connection stays warm through idle-timeout proxies.
+// A client that did not pong since the previous sweep is treated as dead and terminated.
 function heartbeatSweep(clients) {
   for (const ws of clients) {
     if (ws.isAlive === false) {
@@ -231,7 +231,7 @@ function setupWebSocket(server, opts = {}) {
     });
   });
 
-  // Terminate dead connections behind proxies that silently drop idle sockets.
+  // Heartbeat keeps sockets alive through idle-timeout proxies, and terminates any that stop responding.
   const heartbeat = setInterval(
     () => heartbeatSweep(wss.clients),
     HEARTBEAT_INTERVAL_MS,
