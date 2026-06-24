@@ -13,6 +13,7 @@ const { writeCoalesced, getPending } = writeCoalescer;
 const bootstrapRoutes = require("./bootstrap");
 const authConfig = require("../auth/config");
 const authorize = require("../auth/authorize");
+const perUserObsidian = require("../per-user-obsidian");
 
 const router = express.Router();
 
@@ -91,6 +92,40 @@ function invalidateBootstrap(req) {
   }
 }
 
+async function ensurePhysicalParent(physicalPath) {
+  await fs.promises.mkdir(path.dirname(physicalPath), { recursive: true });
+}
+
+async function statWithFallback(storage) {
+  try {
+    return await fs.promises.stat(storage.physical);
+  } catch (e) {
+    if (storage.perUser && e.code === "ENOENT") {
+      return fs.promises.stat(storage.shared);
+    }
+
+    throw e;
+  }
+}
+
+async function readFileWithFallback(storage, encoding) {
+  const enc = encoding === "utf8" || encoding === "utf-8" ? "utf-8" : null;
+
+  try {
+    return enc
+      ? await fs.promises.readFile(storage.physical, enc)
+      : await fs.promises.readFile(storage.physical);
+  } catch (e) {
+    if (storage.perUser && e.code === "ENOENT") {
+      return enc
+        ? await fs.promises.readFile(storage.shared, enc)
+        : await fs.promises.readFile(storage.shared);
+    }
+
+    throw e;
+  }
+}
+
 function guardPath(req, res, source = "query", action) {
   const vaultRoot = getVaultRoot(req, res);
 
@@ -105,20 +140,43 @@ function guardPath(req, res, source = "query", action) {
     return null;
   }
 
-  // Empty string = vault root, which is valid
-  const resolved = resolveVaultPath(vaultRoot, p);
+  const storage = perUserObsidian.resolveStorage(vaultRoot, p, req.principal);
 
-  if (!resolved) {
-    res.status(403).json({ error: "Path traversal rejected" });
+  if (!storage) {
+    res.status(403).json({ error: "Forbidden", code: "EACCES" });
     return null;
   }
 
-  if (!enforcePath(req, res, vaultRoot, resolved, action || defaultAction(req))) {
+  if (
+    !enforcePath(
+      req,
+      res,
+      vaultRoot,
+      storage.shared,
+      action || defaultAction(req),
+    )
+  ) {
     return null;
   }
 
   req._vaultRoot = vaultRoot;
-  return resolved;
+  req._storage = storage;
+  return storage.physical;
+}
+
+function resolvePathPair(req, res, vaultRoot, relPath, action) {
+  const storage = perUserObsidian.resolveStorage(vaultRoot, relPath, req.principal);
+
+  if (!storage) {
+    res.status(403).json({ error: "Forbidden", code: "EACCES" });
+    return null;
+  }
+
+  if (!enforcePath(req, res, vaultRoot, storage.shared, action)) {
+    return null;
+  }
+
+  return storage;
 }
 
 // GET /api/fs/stat?path=...
@@ -129,12 +187,13 @@ router.get("/stat", async (req, res) => {
     return;
   }
 
+  const storage = req._storage;
+
   try {
-    // If a coalesced write is pending, report its size instead of stale disk data
     const buffered = getPending(resolved);
 
     if (buffered) {
-      const diskStat = await fs.promises.stat(resolved).catch(() => null);
+      const diskStat = await statWithFallback(storage).catch(() => null);
       const size = Buffer.isBuffer(buffered.data)
         ? buffered.data.length
         : Buffer.byteLength(buffered.data, buffered.encoding || "utf-8");
@@ -149,7 +208,7 @@ router.get("/stat", async (req, res) => {
       return;
     }
 
-    const stat = await fs.promises.stat(resolved);
+    const stat = await statWithFallback(storage);
 
     res.json({
       type: stat.isDirectory() ? "directory" : "file",
@@ -173,8 +232,7 @@ router.get("/readdir", async (req, res) => {
   }
 
   try {
-    // Check if path is a file. return ENOTDIR instead of crashing
-    const stat = await fs.promises.stat(resolved);
+    const stat = await statWithFallback(req._storage);
 
     if (!stat.isDirectory()) {
       return res
@@ -182,15 +240,20 @@ router.get("/readdir", async (req, res) => {
         .json({ error: "ENOTDIR: not a directory", code: "ENOTDIR" });
     }
 
+    const parentRel = toRelPath(req._vaultRoot, resolved);
     const entries = await fs.promises.readdir(resolved, {
       withFileTypes: true,
     });
 
     res.json(
-      entries.map((e) => ({
-        name: e.name,
-        type: e.isDirectory() ? "directory" : "file",
-      })),
+      entries
+        .filter(
+          (e) => !perUserObsidian.shouldHideReaddirEntry(parentRel, e.name),
+        )
+        .map((e) => ({
+          name: e.name,
+          type: e.isDirectory() ? "directory" : "file",
+        })),
     );
   } catch (e) {
     res
@@ -208,7 +271,7 @@ router.get("/readFile", async (req, res) => {
   }
 
   try {
-    const stat = await fs.promises.stat(resolved);
+    const stat = await statWithFallback(req._storage);
 
     if (stat.isDirectory()) {
       return res.status(400).json({
@@ -235,11 +298,11 @@ router.get("/readFile", async (req, res) => {
     const encoding = req.query.encoding;
 
     if (encoding === "utf8" || encoding === "utf-8") {
-      const data = await fs.promises.readFile(resolved, "utf-8");
+      const data = await readFileWithFallback(req._storage, "utf-8");
 
       res.type("text/plain").send(data);
     } else {
-      const data = await fs.promises.readFile(resolved);
+      const data = await readFileWithFallback(req._storage, null);
 
       res.type("application/octet-stream").send(data);
     }
@@ -259,9 +322,12 @@ router.post("/writeFile", async (req, res) => {
   }
 
   try {
-    // Ensure parent directory exists
-    const dir = path.dirname(resolved);
-    await fs.promises.mkdir(dir, { recursive: true });
+    if (req._storage?.perUser) {
+      await ensurePhysicalParent(resolved);
+    } else {
+      const dir = path.dirname(resolved);
+      await fs.promises.mkdir(dir, { recursive: true });
+    }
 
     const encoding = req.body.encoding || "utf-8";
     let data = req.body.content;
@@ -288,6 +354,10 @@ router.post("/appendFile", async (req, res) => {
   }
 
   try {
+    if (req._storage?.perUser) {
+      await ensurePhysicalParent(resolved);
+    }
+
     await fs.promises.appendFile(resolved, req.body.content, "utf-8");
 
     invalidateBootstrap(req);
@@ -329,23 +399,15 @@ router.post("/rename", async (req, res) => {
     return res.status(400).json({ error: "Missing oldPath or newPath" });
   }
 
-  const oldResolved = resolveVaultPath(vaultRoot, req.body.oldPath);
-  const newResolved = resolveVaultPath(vaultRoot, req.body.newPath);
+  const oldStorage = resolvePathPair(req, res, vaultRoot, req.body.oldPath, "delete");
+  const newStorage = resolvePathPair(req, res, vaultRoot, req.body.newPath, "write");
 
-  if (!oldResolved || !newResolved) {
-    return res.status(403).json({ error: "Invalid path" });
-  }
-
-  // Moving requires removing the source and writing the destination.
-  if (
-    !enforcePath(req, res, vaultRoot, oldResolved, "delete") ||
-    !enforcePath(req, res, vaultRoot, newResolved, "write")
-  ) {
+  if (!oldStorage || !newStorage) {
     return;
   }
 
   try {
-    await fs.promises.rename(oldResolved, newResolved);
+    await fs.promises.rename(oldStorage.physical, newStorage.physical);
 
     invalidateBootstrap(req);
     res.json({ ok: true });
@@ -366,22 +428,27 @@ router.post("/copyFile", async (req, res) => {
     return res.status(400).json({ error: "Missing src or dest" });
   }
 
-  const srcResolved = resolveVaultPath(vaultRoot, req.body.src);
-  const destResolved = resolveVaultPath(vaultRoot, req.body.dest);
+  const srcStorage = resolvePathPair(req, res, vaultRoot, req.body.src, "read");
+  const destStorage = resolvePathPair(req, res, vaultRoot, req.body.dest, "write");
 
-  if (!srcResolved || !destResolved) {
-    return res.status(403).json({ error: "Invalid path" });
-  }
-
-  if (
-    !enforcePath(req, res, vaultRoot, srcResolved, "read") ||
-    !enforcePath(req, res, vaultRoot, destResolved, "write")
-  ) {
+  if (!srcStorage || !destStorage) {
     return;
   }
 
   try {
-    await fs.promises.copyFile(srcResolved, destResolved);
+    if (destStorage.perUser) {
+      await ensurePhysicalParent(destStorage.physical);
+    }
+
+    try {
+      await fs.promises.copyFile(srcStorage.physical, destStorage.physical);
+    } catch (e) {
+      if (srcStorage.perUser && e.code === "ENOENT") {
+        await fs.promises.copyFile(srcStorage.shared, destStorage.physical);
+      } else {
+        throw e;
+      }
+    }
 
     invalidateBootstrap(req);
     res.json({ ok: true });
@@ -517,23 +584,30 @@ router.post("/batch-read", async (req, res) => {
 
   await Promise.all(
     paths.map(async (relPath) => {
-      const resolved = resolveVaultPath(vaultRoot, relPath);
+      const storage = perUserObsidian.resolveStorage(
+        vaultRoot,
+        relPath,
+        req.principal,
+      );
 
-      if (!resolved) {
+      if (!storage) {
         return;
       }
 
-      // Silently omit paths the principal can't read; never leak content or
-      // error the whole batch.
       if (
         enforce &&
-        !authorize.can(req.principal, req._vaultId, toRelPath(vaultRoot, resolved), "read")
+        !authorize.can(
+          req.principal,
+          req._vaultId,
+          toRelPath(vaultRoot, storage.shared),
+          "read",
+        )
       ) {
         return;
       }
 
       try {
-        const buffered = getPending(resolved);
+        const buffered = getPending(storage.physical);
 
         if (buffered) {
           if (typeof buffered.data === "string") {
@@ -547,7 +621,7 @@ router.post("/batch-read", async (req, res) => {
           return;
         }
 
-        const data = await fs.promises.readFile(resolved, "utf-8");
+        const data = await readFileWithFallback(storage, "utf-8");
         files[relPath] = data;
       } catch {
         // Skip unreadable files silently. The client falls back to a
@@ -600,6 +674,10 @@ router.get("/tree", async (req, res) => {
       });
 
       for (const entry of entries) {
+        if (perUserObsidian.shouldHideReaddirEntry(prefix, entry.name)) {
+          continue;
+        }
+
         const rel = prefix ? prefix + "/" + entry.name : entry.name;
         const full = path.join(dir, entry.name);
         const vaultRel = basePrefix ? basePrefix + "/" + rel : rel;

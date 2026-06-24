@@ -14,7 +14,7 @@ const NUMBER_KEYS = [
   "writeCoalesceMs",
   "maxBodyBytes",
 ];
-const LIST_KEYS = ["proxyAllowlist", "directFetchHosts"];
+const LIST_KEYS = ["proxyAllowlist", "directFetchHosts", "perUserObsidianFiles"];
 
 function validate(body) {
   const clean = {};

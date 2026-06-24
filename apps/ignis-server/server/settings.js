@@ -21,6 +21,15 @@ const DEFAULTS = {
   wsOrigins: [],
   // Private IPs/CIDRs the proxy may reach despite the SSRF guard.
   proxyAllowPrivate: [],
+  // Vault-relative .obsidian paths stored per user when AUTH_MODE=local (glob patterns).
+  perUserObsidianFiles: [
+    ".obsidian/workspace.json",
+    ".obsidian/workspace.*.json",
+    ".obsidian/appearance.json",
+    ".obsidian/app.json",
+    ".obsidian/hotkeys.json",
+    ".obsidian/graph.json",
+  ],
 };
 
 const PROXY_MODES = ["any", "allowlist", "disabled"];
@@ -57,6 +66,10 @@ function fromEnv() {
 
   if (process.env.PROXY_ALLOW_PRIVATE_HOSTS) {
     env.proxyAllowPrivate = parseList(process.env.PROXY_ALLOW_PRIVATE_HOSTS);
+  }
+
+  if (process.env.PER_USER_OBSIDIAN_FILES) {
+    env.perUserObsidianFiles = parseList(process.env.PER_USER_OBSIDIAN_FILES);
   }
 
   return env;

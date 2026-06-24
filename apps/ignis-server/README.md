@@ -40,6 +40,20 @@ When `AUTH_MODE` is unset or `none`, auth middleware and ACL checks are skipped 
 
 Set `AUTH_COOKIE_SECURE=true` when Ignis is served over HTTPS so the session cookie is not sent over plain HTTP.
 
+### Per-user `.obsidian` files
+
+When `AUTH_MODE=local`, you can list vault-relative paths (exact or glob) in `perUserObsidianFiles` so each user gets their own copy under `.obsidian/users/<userId>/`. Obsidian still reads and writes the logical path (for example `.obsidian/workspace.json`); the server maps it to the user folder. Reads fall back to the shared vault file until the user saves their own copy.
+
+Configure via server settings (`perUserObsidianFiles` array), environment variable, or `POST /api/settings`:
+
+```yaml
+environment:
+  - AUTH_MODE=local
+  - PER_USER_OBSIDIAN_FILES=.obsidian/workspace.json,.obsidian/workspace.*.json,.obsidian/appearance.json,.obsidian/app.json
+```
+
+Typical per-user candidates: `workspace.json`, `workspace.*.json` (multi-tab workspaces), `appearance.json`, `app.json`, `hotkeys.json`, `graph.json`. Shared vault files such as `core-plugins.json`, `community-plugins.json`, and `workspaces.json` are usually left shared.
+
 ### Reverse proxy or VPN
 
 You can still put authentication in front of Ignis instead of (or in addition to) local auth:
@@ -145,6 +159,7 @@ Runtime settings such as cache sizes and proxy mode can also be changed from **S
 | `AUTH_BOOTSTRAP_PASSWORD` | Password for bootstrap superadmin | unset |
 | `AUTH_SESSION_TTL_MS` | Session lifetime in milliseconds | `604800000` (7 days) |
 | `AUTH_COOKIE_SECURE` | Set session cookie `Secure` flag (`true` / `false`) | `false` |
+| `PER_USER_OBSIDIAN_FILES` | Comma-separated vault-relative globs stored per user under `.obsidian/users/<userId>/` when `AUTH_MODE=local` | unset |
 
 ### Demo mode
 

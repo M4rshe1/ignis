@@ -58,7 +58,8 @@ Only for self-hosted deployments — not used in this demo.
 | `AUTH_BOOTSTRAP_PASSWORD` | Password for bootstrap superadmin | unset |
 | `AUTH_SESSION_TTL_MS` | Session lifetime in milliseconds | `604800000` (7 days) |
 | `AUTH_COOKIE_SECURE` | Set session cookie `Secure` flag (`true` / `false`) | `false` |
+| `PER_USER_OBSIDIAN_FILES` | Comma-separated globs for per-user `.obsidian` files (requires `AUTH_MODE=local`) | unset |
 
-When `AUTH_MODE=local`, user, group, ACL, and session data are stored under `{DATA_ROOT}/auth/`.
+When `AUTH_MODE=local`, user, group, ACL, and session data are stored under `{DATA_ROOT}/auth/`. Per-user Obsidian config lives in each vault at `.obsidian/users/<userId>/`.
 
 Details: [[Session and auth]].

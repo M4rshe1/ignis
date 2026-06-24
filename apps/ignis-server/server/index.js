@@ -27,6 +27,7 @@ const { setupDemo, wireDemoWebSocket } = require("./demo");
 const { setupAuth, principalFromReq } = require("./auth");
 const authConfig = require("./auth/config");
 const authorize = require("./auth/authorize");
+const perUserObsidian = require("./per-user-obsidian");
 
 const REPO_ROOT = path.join(__dirname, "..", "..", "..");
 
@@ -133,9 +134,41 @@ app.use("/vault-files", (req, res, next) => {
     }
   }
 
-  // Rewrite req.url to strip the vault ID prefix, then serve statically
-  req.url = "/" + parts.slice(1).join("/");
-  express.static(vaultPath)(req, res, next);
+  const storage = perUserObsidian.resolveStorage(
+    vaultPath,
+    relPath,
+    req.principal,
+  );
+
+  if (!storage) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const relServe = path
+    .relative(vaultPath, storage.physical)
+    .split(path.sep)
+    .join("/");
+
+  const tryPaths = storage.perUser
+    ? [storage.physical, storage.shared]
+    : [storage.physical];
+
+  for (const filePath of tryPaths) {
+    try {
+      const stat = fs.statSync(filePath);
+
+      if (!stat.isFile()) {
+        continue;
+      }
+
+      res.sendFile(filePath);
+      return;
+    } catch {
+      // try next
+    }
+  }
+
+  res.status(404).json({ error: "Not found", path: relServe });
 });
 
 // Serve our own index.html. Obsidian's scripts are discovered at startup and injected dynamically by the client.
@@ -245,6 +278,15 @@ const wss = setupWebSocket(server, {
         const principal = principalFromReq(req);
         return !!principal && authorize.canVault(principal, vaultId);
       }
+    : null,
+  getWsContext: authConfig.enabled
+    ? (req) => {
+        const principal = principalFromReq(req);
+        return principal ? { userId: principal.userId } : {};
+      }
+    : null,
+  mapWatcherEvent: perUserObsidian.isActive()
+    ? perUserObsidian.mapWatcherEvent
     : null,
 });
 wireDemoWebSocket(server);

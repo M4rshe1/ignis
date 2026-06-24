@@ -18,6 +18,12 @@ When `AUTH_MODE` is unset or `none` (the default), none of the above runs. The s
 
 `AUTH_MODE=local` cannot be combined with `DEMO_MODE=true`.
 
+### Per-user `.obsidian` config
+
+When auth is enabled, the server can store selected `.obsidian` files separately for each user. Configure `perUserObsidianFiles` in server settings or via `PER_USER_OBSIDIAN_FILES` (comma-separated globs). Files are stored at `.obsidian/users/<userId>/…` on disk; Obsidian uses the normal logical paths.
+
+Example paths: `.obsidian/workspace.json`, `.obsidian/workspace.*.json`, `.obsidian/appearance.json`.
+
 ## Browser session API
 
 During boot, Ignis fetches `/api/auth/status` and `/api/auth/me`, then exposes a read-only snapshot on `window.__ignis`:

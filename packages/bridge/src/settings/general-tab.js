@@ -229,6 +229,30 @@ function renderServerSettings(containerEl, current, app) {
     },
   });
 
+  listField(security, {
+    name: "Per-user Obsidian files",
+    desc: "Vault-relative paths (exact or glob) stored separately for each signed-in user under .obsidian/users/<userId>/ when local auth is enabled. Obsidian still uses the logical paths; reads fall back to the shared vault copy until a user saves their own.",
+    value: current.perUserObsidianFiles,
+    key: "perUserObsidianFiles",
+    app,
+    modal: {
+      placeholder: ".obsidian/workspace.json",
+      emptyNote: "No per-user paths configured.",
+      recommended: {
+        note: "Common UI state files to keep per user. Leave core-plugins.json and community-plugins.json shared so plugin config stays vault-wide.",
+        hosts: [
+          ".obsidian/workspace.json",
+          ".obsidian/workspace.*.json",
+          ".obsidian/appearance.json",
+          ".obsidian/app.json",
+          ".obsidian/hotkeys.json",
+          ".obsidian/graph.json",
+        ],
+        buttonText: "Add common per-user files",
+      },
+    },
+  });
+
   const advanced = createSettingGroup(containerEl, "Advanced");
 
   numberField(advanced, {

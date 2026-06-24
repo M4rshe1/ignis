@@ -18,6 +18,7 @@ const settings = require("../settings");
 const { sanitizeError } = require("@ignis/server-core");
 const authConfig = require("../auth/config");
 const authorize = require("../auth/authorize");
+const perUserObsidian = require("../per-user-obsidian");
 
 const router = express.Router();
 
@@ -140,7 +141,7 @@ async function buildEntry(vaultId) {
   const response = {
     vault,
     vaultList: buildVaultList(),
-    tree,
+    tree: perUserObsidian.filterBootstrapTree(tree),
     // In demo mode, hide server-side plugins from the client.
     plugins: config.demoMode ? [] : getDiscoveredPlugins(),
     virtualPlugins: getVirtualPluginsForVault(vaultId, getVersion()),

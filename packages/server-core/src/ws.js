@@ -24,7 +24,13 @@ function heartbeatSweep(clients) {
 }
 
 function setupWebSocket(server, opts = {}) {
-  const { getVaultPath, originAllowlist, authorizeConnect } = opts;
+  const {
+    getVaultPath,
+    originAllowlist,
+    authorizeConnect,
+    getWsContext,
+    mapWatcherEvent,
+  } = opts;
 
   if (typeof getVaultPath !== "function") {
     throw new Error("setupWebSocket: opts.getVaultPath is required");
@@ -158,6 +164,9 @@ function setupWebSocket(server, opts = {}) {
     const vaultPath = getVaultPath(vaultId);
     console.log(`[ws] Client connected to vault: ${vaultId}`);
 
+    ws._ignisContext =
+      typeof getWsContext === "function" ? getWsContext(req) || {} : {};
+
     // isAlive is reset by each pong; the heartbeat sweep terminates sockets that miss one.
     ws.isAlive = true;
     ws.on("pong", () => {
@@ -175,9 +184,25 @@ function setupWebSocket(server, opts = {}) {
 
     // Per-client listener that forwards file events over WebSocket
     const listener = (event) => {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify(event));
+      if (ws.readyState !== ws.OPEN) {
+        return;
       }
+
+      let payload = event;
+
+      if (typeof mapWatcherEvent === "function") {
+        try {
+          payload = mapWatcherEvent(event, ws._ignisContext);
+        } catch {
+          payload = event;
+        }
+
+        if (!payload) {
+          return;
+        }
+      }
+
+      ws.send(JSON.stringify(payload));
     };
 
     watcher.addListener(vaultId, listener);
