@@ -2,6 +2,8 @@ const express = require("express");
 const { writeCoalescer } = require("@ignis/server-core");
 const settings = require("../settings");
 const bootstrapRoutes = require("./bootstrap");
+const authConfig = require("../auth/config");
+const authorize = require("../auth/authorize");
 
 const router = express.Router();
 
@@ -76,6 +78,11 @@ router.get("/", (req, res) => {
 });
 
 router.post("/", (req, res) => {
+  // Changing server settings is a superadmin operation when auth is enabled.
+  if (authConfig.enabled && !authorize.isSuperadmin(req.principal)) {
+    return res.status(403).json({ error: "Forbidden", code: "EACCES" });
+  }
+
   let clean;
 
   try {

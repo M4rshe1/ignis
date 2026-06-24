@@ -16,6 +16,8 @@ const {
 const { getVersion } = require("../version");
 const settings = require("../settings");
 const { sanitizeError } = require("@ignis/server-core");
+const authConfig = require("../auth/config");
+const authorize = require("../auth/authorize");
 
 const router = express.Router();
 
@@ -216,6 +218,19 @@ router.get("/", async (req, res) => {
     return res.status(404).json({ error: "Vault not found", id: vaultId });
   }
 
+  // Vault-level gate when auth is enabled.
+  if (authConfig.enabled) {
+    if (!req.principal) {
+      return res
+        .status(401)
+        .json({ error: "Authentication required", code: "EAUTH" });
+    }
+
+    if (!authorize.canVault(req.principal, vaultId)) {
+      return res.status(403).json({ error: "Forbidden", code: "EACCES" });
+    }
+  }
+
   try {
     const entry = await getOrBuild(vaultId);
 
@@ -228,6 +243,23 @@ router.get("/", async (req, res) => {
     // Deep-clone so the demo translator's in-place mutation doesn't pollute the cached response object.
     if (req._demoSessionId) {
       return res.json(JSON.parse(JSON.stringify(entry.response)));
+    }
+
+    // When auth is enabled, non-superadmins get a per-principal filtered view:
+    // the metadata tree is pruned to readable/listable paths and the vault list
+    // to accessible vaults. This bypasses the pre-compressed buffer (which holds
+    // the full, unfiltered tree) to avoid leaking metadata across users.
+    if (authConfig.enabled && !authorize.isSuperadmin(req.principal)) {
+      const filtered = JSON.parse(JSON.stringify(entry.response));
+      filtered.tree = authorize.filterTree(req.principal, vaultId, filtered.tree);
+      filtered.vaultList = authorize
+        .filterVaults(
+          req.principal,
+          (filtered.vaultList || []).map((v) => v.id),
+        )
+        .map((id) => (filtered.vaultList || []).find((v) => v.id === id));
+
+      return res.json(filtered);
     }
 
     const ae = req.headers["accept-encoding"] || "";

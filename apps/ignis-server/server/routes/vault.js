@@ -4,8 +4,29 @@ const config = require("../config");
 const path = require("path");
 const bootstrapRoutes = require("./bootstrap");
 const { sanitizeError } = require("@ignis/server-core");
+const authConfig = require("../auth/config");
+const authorize = require("../auth/authorize");
 
 const router = express.Router();
+
+// Vault management (rename/delete/create) requires broad admin rights.
+function requireVaultAdmin(req, res, vaultId) {
+  if (!authConfig.enabled) {
+    return true;
+  }
+
+  if (!req.principal) {
+    res.status(401).json({ error: "Authentication required", code: "EAUTH" });
+    return false;
+  }
+
+  if (!authorize.can(req.principal, vaultId, "", "admin")) {
+    res.status(403).json({ error: "Forbidden", code: "EACCES" });
+    return false;
+  }
+
+  return true;
+}
 
 // Vault names become directories under VAULT_ROOT; reject traversal, hidden, and reserved-device names.
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
@@ -30,7 +51,20 @@ function isValidVaultName(name) {
 router.get("/list", (req, res) => {
   config.refreshVaults();
 
-  const list = Object.entries(config.vaults).map(([id, vaultPath]) => ({
+  let entries = Object.entries(config.vaults);
+
+  // Only expose vaults the principal can access.
+  if (authConfig.enabled) {
+    const allowed = new Set(
+      authorize.filterVaults(
+        req.principal,
+        entries.map(([id]) => id),
+      ),
+    );
+    entries = entries.filter(([id]) => allowed.has(id));
+  }
+
+  const list = entries.map(([id, vaultPath]) => ({
     id,
     name: id,
     path: vaultPath,
@@ -48,6 +82,18 @@ router.get("/info", async (req, res) => {
     return res.status(404).json({ error: "Vault not found", id: vaultId });
   }
 
+  if (authConfig.enabled) {
+    if (!req.principal) {
+      return res
+        .status(401)
+        .json({ error: "Authentication required", code: "EAUTH" });
+    }
+
+    if (!authorize.canVault(req.principal, vaultId)) {
+      return res.status(403).json({ error: "Forbidden", code: "EACCES" });
+    }
+  }
+
   res.json({
     id: vaultId,
     name: vaultId,
@@ -59,6 +105,11 @@ router.get("/info", async (req, res) => {
 
 // POST /api/vault/create { name } - create a new vault in VAULT_ROOT
 router.post("/create", async (req, res) => {
+  // Creating new vaults is a superadmin operation when auth is enabled.
+  if (authConfig.enabled && !authorize.isSuperadmin(req.principal)) {
+    return res.status(403).json({ error: "Forbidden", code: "EACCES" });
+  }
+
   const name = req.body?.name;
 
   if (!isValidVaultName(name)) {
@@ -101,6 +152,10 @@ router.post("/rename", async (req, res) => {
     return res.status(404).json({ error: "Vault not found" });
   }
 
+  if (!requireVaultAdmin(req, res, vaultId)) {
+    return;
+  }
+
   const newPath = path.join(config.vaultRoot, newName);
 
   try {
@@ -129,6 +184,10 @@ router.delete("/remove", async (req, res) => {
 
   if (!vaultPath) {
     return res.status(404).json({ error: "Vault not found" });
+  }
+
+  if (!requireVaultAdmin(req, res, vaultId)) {
+    return;
   }
 
   try {

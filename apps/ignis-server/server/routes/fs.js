@@ -11,8 +11,51 @@ const {
 } = require("@ignis/server-core");
 const { writeCoalesced, getPending } = writeCoalescer;
 const bootstrapRoutes = require("./bootstrap");
+const authConfig = require("../auth/config");
+const authorize = require("../auth/authorize");
 
 const router = express.Router();
+
+// Default ACL action inferred from the HTTP method when a route doesn't
+// specify one explicitly.
+function defaultAction(req) {
+  if (req.method === "GET") {
+    return "read";
+  }
+
+  if (req.method === "DELETE") {
+    return "delete";
+  }
+
+  return "write";
+}
+
+// Vault-relative POSIX path for a resolved absolute path.
+function toRelPath(vaultRoot, resolved) {
+  return path.relative(vaultRoot, resolved).split(path.sep).join("/");
+}
+
+// Enforce path-level ACL. Returns true when allowed (or auth disabled);
+// otherwise writes a 401/403 response and returns false.
+function enforcePath(req, res, vaultRoot, resolved, action) {
+  if (!authConfig.enabled) {
+    return true;
+  }
+
+  if (!req.principal) {
+    res.status(401).json({ error: "Authentication required", code: "EAUTH" });
+    return false;
+  }
+
+  const rel = toRelPath(vaultRoot, resolved);
+
+  if (!authorize.can(req.principal, req._vaultId, rel, action)) {
+    res.status(403).json({ error: "Forbidden", code: "EACCES" });
+    return false;
+  }
+
+  return true;
+}
 
 // Resolve the vault root for a request. Reads vault ID from query or body.
 function getVaultRoot(req, res) {
@@ -25,6 +68,20 @@ function getVaultRoot(req, res) {
   }
 
   req._vaultId = vaultId;
+
+  // Vault-level gate: the principal must have at least one grant on the vault.
+  if (authConfig.enabled) {
+    if (!req.principal) {
+      res.status(401).json({ error: "Authentication required", code: "EAUTH" });
+      return null;
+    }
+
+    if (!authorize.canVault(req.principal, vaultId)) {
+      res.status(403).json({ error: "Forbidden", code: "EACCES" });
+      return null;
+    }
+  }
+
   return vaultPath;
 }
 
@@ -34,7 +91,7 @@ function invalidateBootstrap(req) {
   }
 }
 
-function guardPath(req, res, source = "query") {
+function guardPath(req, res, source = "query", action) {
   const vaultRoot = getVaultRoot(req, res);
 
   if (!vaultRoot) {
@@ -53,6 +110,10 @@ function guardPath(req, res, source = "query") {
 
   if (!resolved) {
     res.status(403).json({ error: "Path traversal rejected" });
+    return null;
+  }
+
+  if (!enforcePath(req, res, vaultRoot, resolved, action || defaultAction(req))) {
     return null;
   }
 
@@ -275,6 +336,14 @@ router.post("/rename", async (req, res) => {
     return res.status(403).json({ error: "Invalid path" });
   }
 
+  // Moving requires removing the source and writing the destination.
+  if (
+    !enforcePath(req, res, vaultRoot, oldResolved, "delete") ||
+    !enforcePath(req, res, vaultRoot, newResolved, "write")
+  ) {
+    return;
+  }
+
   try {
     await fs.promises.rename(oldResolved, newResolved);
 
@@ -302,6 +371,13 @@ router.post("/copyFile", async (req, res) => {
 
   if (!srcResolved || !destResolved) {
     return res.status(403).json({ error: "Invalid path" });
+  }
+
+  if (
+    !enforcePath(req, res, vaultRoot, srcResolved, "read") ||
+    !enforcePath(req, res, vaultRoot, destResolved, "write")
+  ) {
+    return;
   }
 
   try {
@@ -437,11 +513,22 @@ router.post("/batch-read", async (req, res) => {
 
   const files = {};
 
+  const enforce = authConfig.enabled;
+
   await Promise.all(
     paths.map(async (relPath) => {
       const resolved = resolveVaultPath(vaultRoot, relPath);
 
       if (!resolved) {
+        return;
+      }
+
+      // Silently omit paths the principal can't read; never leak content or
+      // error the whole batch.
+      if (
+        enforce &&
+        !authorize.can(req.principal, req._vaultId, toRelPath(vaultRoot, resolved), "read")
+      ) {
         return;
       }
 
@@ -488,6 +575,22 @@ router.get("/tree", async (req, res) => {
     return res.status(403).json({ error: "Invalid path" });
   }
 
+  // Vault-relative prefix of the requested subtree, used both to gate the
+  // request and to map subtree-relative keys to vault-relative ACL paths.
+  const basePrefix = toRelPath(vaultRoot, rootPath);
+
+  if (authConfig.enabled) {
+    if (!req.principal) {
+      return res
+        .status(401)
+        .json({ error: "Authentication required", code: "EAUTH" });
+    }
+
+    if (!authorize.can(req.principal, req._vaultId, basePrefix, "list")) {
+      return res.status(403).json({ error: "Forbidden", code: "EACCES" });
+    }
+  }
+
   try {
     const tree = {};
 
@@ -499,12 +602,27 @@ router.get("/tree", async (req, res) => {
       for (const entry of entries) {
         const rel = prefix ? prefix + "/" + entry.name : entry.name;
         const full = path.join(dir, entry.name);
+        const vaultRel = basePrefix ? basePrefix + "/" + rel : rel;
 
         if (entry.isDirectory()) {
+          if (
+            authConfig.enabled &&
+            !authorize.can(req.principal, req._vaultId, vaultRel, "list")
+          ) {
+            continue;
+          }
+
           tree[rel] = { type: "directory" };
 
           await walk(full, rel);
         } else {
+          if (
+            authConfig.enabled &&
+            !authorize.can(req.principal, req._vaultId, vaultRel, "read")
+          ) {
+            continue;
+          }
+
           const stat = await fs.promises.stat(full);
 
           tree[rel] = {

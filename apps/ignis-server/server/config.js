@@ -1,6 +1,9 @@
 const path = require("path");
 const fs = require("fs");
 
+// Load repo-root .env before reading any process.env values below.
+require("./load-env");
+
 const REPO_ROOT = path.join(__dirname, "..", "..", "..");
 
 // VAULT_ROOT: a directory that contains vault folders.
@@ -75,6 +78,10 @@ module.exports = {
     vaults = discoverVaults();
     return vaults;
   },
+
+  authMode: ["none", "local"].includes(process.env.AUTH_MODE)
+    ? process.env.AUTH_MODE
+    : "none",
 
   demoMode: process.env.DEMO_MODE === "true",
   demoMaxSessions: parseInt(process.env.DEMO_MAX_SESSIONS) || 20,

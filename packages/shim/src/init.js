@@ -13,6 +13,8 @@ import { setInputCacheLimits } from "./fs/input-cache.js";
 import { setDirectFetchHosts } from "./util/url.js";
 import { autoTrustDemoVaults, maybeProvisionDemoVault } from "./demo.js";
 import { initNativeMenuGuard } from "./native-menu-guard.js";
+import { authRequired, showLoginOverlay } from "./auth-gate.js";
+import { refreshSession } from "./session-api.js";
 
 let bootstrapVirtualPlugins = [];
 
@@ -239,6 +241,17 @@ function resolveWorkspaceAndAppearance() {
 }
 
 export function initialize() {
+  refreshSession();
+
+  // When the server requires auth and no valid session exists, show the login
+  // overlay and halt boot. Obsidian's scripts wait on window.__ignisBootReady,
+  // which we intentionally leave unresolved so nothing loads until sign-in.
+  if (authRequired()) {
+    showLoginOverlay();
+    window.__ignisBootReady = new Promise(() => {});
+    return;
+  }
+
   if (maybeProvisionDemoVault()) {
     window.__ignisBootReady = Promise.resolve();
     return;

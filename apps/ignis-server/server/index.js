@@ -24,6 +24,9 @@ const pluginRoutes = require("./routes/plugins");
 writeCoalescer.configure({ writeCoalesceMs: settings.get("writeCoalesceMs") });
 const { flushAll } = writeCoalescer;
 const { setupDemo, wireDemoWebSocket } = require("./demo");
+const { setupAuth, principalFromReq } = require("./auth");
+const authConfig = require("./auth/config");
+const authorize = require("./auth/authorize");
 
 const REPO_ROOT = path.join(__dirname, "..", "..", "..");
 
@@ -84,6 +87,10 @@ const bootstrapRoutes = require("./routes/bootstrap");
 
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 
+// Local auth: attaches identity and gates API routes.
+// Must run BEFORE the routes are mounted. No-op when AUTH_MODE=none.
+setupAuth(app);
+
 // Demo mode: layers session/quota/allowlist middleware on top of the existing routes.
 // Must run BEFORE the routes are mounted. No-op when DEMO_MODE != true.
 setupDemo(app);
@@ -111,6 +118,19 @@ app.use("/vault-files", (req, res, next) => {
 
   if (!vaultPath) {
     return res.status(404).json({ error: "Vault not found" });
+  }
+
+  const relPath = parts.slice(1).map(decodeURIComponent).join("/");
+
+  // Enforce read ACL on the requested vault file when auth is enabled.
+  if (authConfig.enabled) {
+    if (!req.principal) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    if (!authorize.can(req.principal, vaultId, relPath, "read")) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
   }
 
   // Rewrite req.url to strip the vault ID prefix, then serve statically
@@ -220,6 +240,12 @@ const server = app.listen(config.port, async () => {
 const wss = setupWebSocket(server, {
   getVaultPath: config.getVaultPath,
   originAllowlist: settings.get("wsOrigins"),
+  authorizeConnect: authConfig.enabled
+    ? (req, vaultId) => {
+        const principal = principalFromReq(req);
+        return !!principal && authorize.canVault(principal, vaultId);
+      }
+    : null,
 });
 wireDemoWebSocket(server);
 

@@ -60,11 +60,25 @@ async function request(method, endpoint, params = {}) {
       .json()
       .catch(() => ({ error: res.statusText, code: "UNKNOWN" }));
     const e = new Error(err.error || res.statusText);
-    e.code = err.code || "UNKNOWN";
+    e.code = err.code || codeForStatus(res.status);
     throw e;
   }
 
   return res;
+}
+
+// Map an HTTP status to a Node errno when the server didn't supply one, so
+// Obsidian sees a permission error rather than an opaque failure.
+function codeForStatus(status) {
+  if (status === 403) {
+    return "EACCES";
+  }
+
+  if (status === 401) {
+    return "EAUTH";
+  }
+
+  return "UNKNOWN";
 }
 
 async function requestJson(method, endpoint, params = {}) {
@@ -101,10 +115,10 @@ function requestSync(method, endpoint, params = {}) {
     try {
       const body = JSON.parse(xhr.responseText);
       err = new Error(body.error || "Request failed");
-      err.code = body.code || "UNKNOWN";
+      err.code = body.code || codeForStatus(xhr.status);
     } catch {
       err = new Error("Request failed: " + xhr.status);
-      err.code = "UNKNOWN";
+      err.code = codeForStatus(xhr.status);
     }
 
     throw err;

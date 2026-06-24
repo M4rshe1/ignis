@@ -1,6 +1,8 @@
 // Public Ignis API surface. The documented way for plugins (and Ignis-internal code) to reach shim services.
 // WIP, may expand to cover more shared functionality.
 
+import { getSession, refreshSession } from "./session-api.js";
+
 export function installIgnisApi(wsClient) {
   window.__ignis = window.__ignis || {};
 
@@ -15,6 +17,16 @@ export function installIgnisApi(wsClient) {
     enumerable: true,
     configurable: true,
   });
+
+  Object.defineProperty(window.__ignis, "session", {
+    get() {
+      return getSession();
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  window.__ignis.refreshSession = refreshSession;
 
   window.__ignis.ws = {
     subscribe: wsClient.subscribe,

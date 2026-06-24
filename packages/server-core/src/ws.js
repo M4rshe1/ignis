@@ -24,7 +24,7 @@ function heartbeatSweep(clients) {
 }
 
 function setupWebSocket(server, opts = {}) {
-  const { getVaultPath, originAllowlist } = opts;
+  const { getVaultPath, originAllowlist, authorizeConnect } = opts;
 
   if (typeof getVaultPath !== "function") {
     throw new Error("setupWebSocket: opts.getVaultPath is required");
@@ -137,6 +137,22 @@ function setupWebSocket(server, opts = {}) {
     if (!vaultId || !getVaultPath(vaultId)) {
       ws.close(4001, "Invalid or missing vault ID");
       return;
+    }
+
+    // Enforce vault-level access when an authorizer is configured.
+    if (typeof authorizeConnect === "function") {
+      let allowed = false;
+
+      try {
+        allowed = authorizeConnect(req, vaultId);
+      } catch {
+        allowed = false;
+      }
+
+      if (!allowed) {
+        ws.close(4003, "Not authorized for vault");
+        return;
+      }
     }
 
     const vaultPath = getVaultPath(vaultId);
