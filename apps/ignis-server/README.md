@@ -15,24 +15,51 @@ The self-hosted Docker variant of Ignis. For the project overview, feature list,
 
 ## Authentication
 
-Ignis has **no built-in authentication** and serves plain HTTP by default. Both authentication and TLS termination are expected to be handled by whatever you put in front of it.
+By default Ignis has **no authentication** (`AUTH_MODE=none`). Anyone who can reach the server can read and write vault files. For anything exposed beyond localhost, enable auth.
 
-> [!IMPORTANT]
-> HTTPS is functionally required, not just for confidentiality. Browser crypto and clipboard APIs are gated to secure contexts, so plain HTTP at a non-localhost origin breaks graph view, the outline, Sync, and more. `localhost` is exempt. See [Secure context (HTTPS)](#secure-context-https).
+### Built-in local auth (`AUTH_MODE=local`)
 
-If you are exposing Ignis to the internet, **you should really** put an authentication layer in front of it. Options include:
+Ignis can enforce sign-in and per-vault, per-path access control without a reverse proxy:
+
+```yaml
+environment:
+  - AUTH_MODE=local
+  - AUTH_BOOTSTRAP_USER=admin
+  - AUTH_BOOTSTRAP_PASSWORD=change-me-on-first-login
+```
+
+On first start with no users, Ignis creates a **superadmin** from `AUTH_BOOTSTRAP_USER` and `AUTH_BOOTSTRAP_PASSWORD` (both required). Superadmins manage users, groups, and ACL grants from the **Access control** UI (ribbon shield icon) or via `/api/auth/admin/*`.
+
+**ACL grants** assign `list`, `read`, `write`, `delete`, or `admin` on glob paths within a vault (`Projects/**`, `Notes/Private/*`). Deny wins when two grants tie on specificity. Users with vault access get implicit read/list on `.obsidian/**`. Vault creation requires superadmin; rename and delete require the `admin` action on that vault.
+
+Sessions use an HttpOnly cookie (`ignis-session`). User, group, ACL, and session data persist under `{DATA_ROOT}/auth/`.
+
+When `AUTH_MODE` is unset or `none`, auth middleware and ACL checks are skipped entirely — the server behaves as if auth were not installed.
+
+`AUTH_MODE=local` cannot run alongside `DEMO_MODE=true`.
+
+Set `AUTH_COOKIE_SECURE=true` when Ignis is served over HTTPS so the session cookie is not sent over plain HTTP.
+
+### Reverse proxy or VPN
+
+You can still put authentication in front of Ignis instead of (or in addition to) local auth:
 
 - A reverse proxy with Basic Auth (nginx, Caddy, Traefik)
 - An SSO proxy like Authelia, Authentik, or OAuth2 Proxy
 - A VPN (Tailscale, WireGuard)
 - Cloudflare Application Tunnel
 
-Example configurations for Basic Auth and Authelia are in [`examples/`](examples).
+Example configurations for Basic Auth and Authelia are in [`examples/`](examples). OIDC inside Ignis is planned; local auth covers username/password and ACL today.
+
+> [!IMPORTANT]
+> HTTPS is functionally required, not just for confidentiality. Browser crypto and clipboard APIs are gated to secure contexts, so plain HTTP at a non-localhost origin breaks graph view, the outline, Sync, and more. `localhost` is exempt. See [Secure context (HTTPS)](#secure-context-https).
 
 > [!CAUTION]
 > Do not run Ignis on a public network without auth. Anyone with the URL can read and write your vault files.
 
-Ignis also runs a cross-origin proxy (`/api/proxy`) that reaches any public host by default. It rejects private, loopback, and link-local addresses, and you can narrow it to an allowlist or disable it entirely from the proxy settings in the Ignis settings panel. A companion direct-fetch host list (same Settings > Security panel) marks hosts the browser fetches directly instead of through the proxy, for CORS-friendly hosts.
+### Cross-origin proxy
+
+Ignis runs a cross-origin proxy (`/api/proxy`) that reaches any public host by default. It rejects private, loopback, and link-local addresses, and you can narrow it to an allowlist or disable it entirely from the proxy settings in the Ignis settings panel. A companion direct-fetch host list (same Settings > Security panel) marks hosts the browser fetches directly instead of through the proxy, for CORS-friendly hosts.
 
 ## Secure context (HTTPS)
 
@@ -45,7 +72,7 @@ Three ways to get a secure context:
 - **Mark the origin trusted in the browser.** The most direct fix for LAN access without TLS: tell the browser to treat the Ignis origin as a secure context. No server changes, but per-browser and per-machine, so every client has to set it.
   - **Chromium (Chrome, Edge, Brave, Opera, Vivaldi):** open `chrome://flags/#unsafely-treat-insecure-origin-as-secure` (Edge and Brave expose the same flag at `edge://flags` and `brave://flags`), set it to **Enabled**, enter the Ignis origin in the box (for example `http://192.168.1.10:8080`; comma-separate several), and relaunch the browser.
   - **Firefox:** in `about:config`, add the host to `dom.securecontext.allowlist` (comma-separated). Firefox may then try to upgrade sub-resource requests to HTTPS, which can break asset loading, so a reverse proxy is the more reliable option here.
-  - **Safari:** no equivalent flag, safari requires TLS.
+  - **Safari:** no equivalent flag; Safari requires TLS.
 
 ## Setup with Docker Compose
 
@@ -61,6 +88,11 @@ services:
       - OBSIDIAN_VERSION=1.12.7
       - PUID=1000
       - PGID=1000
+      # Optional: built-in auth (see Authentication above)
+      # - AUTH_MODE=local
+      # - AUTH_BOOTSTRAP_USER=admin
+      # - AUTH_BOOTSTRAP_PASSWORD=change-me
+      # - AUTH_COOKIE_SECURE=true   # when behind HTTPS
     volumes:
       - ./vaults:/vaults
       - ./data:/app/data
@@ -80,16 +112,18 @@ To build from source instead of pulling the image, clone the repo and run `docke
 | Mount | Description |
 | ----- | ----------- |
 | `/vaults` | Vault storage. Each subdirectory is a vault. |
-| `/app/data` | State persistence for various Ignis-specific functionality: plugin management, headless sync config, etc. |
+| `/app/data` | Persistent Ignis state: plugin config, headless sync state, local auth users/groups/ACL/sessions (`auth/`), etc. |
 | `/app/obsidian-app` | Cached Obsidian assets. Persisting this avoids re-downloading on container recreate. |
 
 ## Environment Variables
+
+### Server
 
 | Variable | Description | Default |
 | -------- | ----------- | ------- |
 | `PORT` | Server listen port | `8080` |
 | `VAULT_ROOT` | Path to vault storage inside the container | `/vaults` |
-| `DATA_ROOT` | Path to persistent data (plugin config, sync state, auth tokens) | `/app/data` |
+| `DATA_ROOT` | Path to persistent data (plugin config, sync state, auth data) | `/app/data` |
 | `OBSIDIAN_VERSION` | Obsidian version to download | `1.12.7` |
 | `OBSIDIAN_ASSETS_PATH` | Where the extracted Obsidian app files live. Override if you're pointing at a pre-extracted directory instead of letting the entrypoint download. | `/app/obsidian-app` |
 | `OBSIDIAN_PACKAGE` | Path to a pre-placed Obsidian package to unpack on first run instead of downloading, for offline or restricted networks. Accepts `.deb` (the form obsidian.md distributes), `.asar.gz`, or `.asar`. | unset |
@@ -100,7 +134,32 @@ To build from source instead of pulling the image, clone the repo and run `docke
 | `WS_ORIGINS` | Comma-separated allowlist of `Origin` headers accepted on the WebSocket endpoint. When unset, any origin is accepted. | unset |
 | `PROXY_ALLOW_PRIVATE_HOSTS` | Comma-separated IPs or IPv4 CIDRs the cross-origin proxy may reach despite the private-address block, for LAN services. Matched against the resolved IP. Reopens SSRF to the listed targets. | unset |
 
-Demo mode adds its own set of env vars (per-session vaults, auto-cleanup, proxy allowlist, login blocking). See [`examples/demo/`](examples/demo/) if you want to run a public demo deployment.
+Runtime settings such as cache sizes and proxy mode can also be changed from **Settings → Ignis** in the Obsidian UI without restarting the server.
+
+### Local auth
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `AUTH_MODE` | `none` (off) or `local` (built-in users + ACL) | `none` |
+| `AUTH_BOOTSTRAP_USER` | First superadmin username when no users exist | unset |
+| `AUTH_BOOTSTRAP_PASSWORD` | Password for bootstrap superadmin | unset |
+| `AUTH_SESSION_TTL_MS` | Session lifetime in milliseconds | `604800000` (7 days) |
+| `AUTH_COOKIE_SECURE` | Set session cookie `Secure` flag (`true` / `false`) | `false` |
+
+### Demo mode
+
+For a public, no-login demo deployment. Mutually exclusive with `AUTH_MODE=local`. See [`examples/demo/`](examples/demo/).
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `DEMO_MODE` | Enable demo mode (per-session vaults, auto-cleanup, proxy allowlist, login blocking) | `false` |
+| `DEMO_MAX_SESSIONS` | Concurrent demo session cap | `20` |
+| `DEMO_VAULTS_PER_SESSION` | Max vaults per session | `3` |
+| `DEMO_SESSION_QUOTA_BYTES` | Cumulative byte budget per session | `716800` (700 KB) |
+| `DEMO_TIMEOUT_MS` | Inactivity timeout before cleanup | `1800000` (30 min) |
+| `DEMO_TEMPLATE_DIR` | Starter vault content copied into each new demo vault | `server/demo-template/` |
+
+When running from source, variables can also be set in a repo-root `.env` file (loaded automatically by the server).
 
 ## Offline / restricted-network install
 
@@ -127,4 +186,4 @@ If you want to try a newer Obsidian version before Ignis updates, set `OBSIDIAN_
 
 ## Backups
 
-Vault data lives as ordinary files in `/vaults`. Back it up however you back up other server-side data; Ignis does not provide a built-in backup mechanism.
+Vault data lives as ordinary files in `/vaults`. Back it up however you back up other server-side data; Ignis does not provide a built-in backup mechanism. With `AUTH_MODE=local`, also back up `{DATA_ROOT}/auth/` if you need to preserve users, groups, and ACL grants.
