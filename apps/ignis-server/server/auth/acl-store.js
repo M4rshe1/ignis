@@ -28,7 +28,35 @@ function isValidSubject(subject) {
   );
 }
 
-function createGrant({ subject, vault, path: relPath, actions, effect }) {
+function normalizeGrantName(name) {
+  if (name === undefined || name === null) {
+    return undefined;
+  }
+
+  if (typeof name !== "string") {
+    const err = new Error("name must be a string");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const trimmed = name.trim();
+
+  if (!trimmed) {
+    const err = new Error("name cannot be empty");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (trimmed.length > 120) {
+    const err = new Error("name must be at most 120 characters");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return trimmed;
+}
+
+function createGrant({ subject, vault, path: relPath, actions, effect, name }) {
   if (!isValidSubject(subject)) {
     const err = new Error("subject must be 'user:<id>' or 'group:<name>'");
     err.statusCode = 400;
@@ -65,6 +93,12 @@ function createGrant({ subject, vault, path: relPath, actions, effect }) {
     actions,
     effect: effect === "deny" ? "deny" : "allow",
   };
+
+  const normalizedName = normalizeGrantName(name);
+
+  if (normalizedName) {
+    grant.name = normalizedName;
+  }
 
   const grants = loadAll();
   grants.push(grant);
@@ -113,6 +147,10 @@ function updateGrant(id, patch) {
 
   if (patch.effect === "allow" || patch.effect === "deny") {
     grant.effect = patch.effect;
+  }
+
+  if (patch.name !== undefined) {
+    grant.name = normalizeGrantName(patch.name);
   }
 
   saveAll(grants);

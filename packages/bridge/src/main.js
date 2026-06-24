@@ -66,3 +66,4 @@ class IgnisBridgePlugin extends Plugin {
 }
 
 export default IgnisBridgePlugin;
+export { initAuthRibbon } from "./auth-ribbon.js";

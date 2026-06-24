@@ -130,6 +130,10 @@ function normalizeGrantBody(body) {
     next.subject = normalizeGrantSubject(next.subject);
   }
 
+  if (typeof next.name === "string") {
+    next.name = next.name.trim();
+  }
+
   return next;
 }
 

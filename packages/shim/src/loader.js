@@ -67,6 +67,8 @@ extractObsidianModule()
         reportLoadFailure(vp.id, e);
       }
     }
+
+    mod.initAuthRibbon(bridge);
   })
   .catch((e) => console.error("[ignis] bridge load failed:", e));
 

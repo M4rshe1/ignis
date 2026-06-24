@@ -13,6 +13,7 @@
   import Button from "../components/input/Button.svelte";
   import ConfirmDialog from "../components/layout/ConfirmDialog.svelte";
   import MessageDialog from "../components/layout/MessageDialog.svelte";
+  import SearchInput from "../components/input/SearchInput.svelte";
   import { authService } from "@ignis/services";
 
   const TABS = [
@@ -27,6 +28,7 @@
   let modalRef;
   let loading = true;
   let error = "";
+  let searchQuery = "";
 
   let users = [];
   let groups = [];
@@ -99,6 +101,7 @@
 
   function emptyGrantForm() {
     return {
+      name: "",
       subjectType: "group",
       subjectId: "",
       vault: "",
@@ -297,6 +300,7 @@
     const { subjectType, subjectId } = parseSubject(grant.subject);
 
     grantForm = {
+      name: grant.name || "",
       subjectType,
       subjectId,
       vault: grant.vault,
@@ -324,6 +328,11 @@
 
   async function saveGrant() {
     try {
+      if (!grantForm.name.trim()) {
+        error = "Name is required";
+        return;
+      }
+
       if (!grantForm.subjectId || !grantForm.vault || !grantForm.path.trim()) {
         error = "Subject, vault, and path are required";
         return;
@@ -337,6 +346,7 @@
       }
 
       const body = {
+        name: grantForm.name.trim(),
         subject: buildSubject(),
         vault: grantForm.vault,
         path: grantForm.path.trim(),
@@ -360,7 +370,7 @@
   async function deleteGrant(grant) {
     confirmDialog = {
       title: "Remove permission",
-      message: `Remove grant for ${grant.subject}?`,
+      message: `Remove "${grantTitle(grant)}"?`,
       description: `${grant.vault}: ${grant.path}`,
       confirmText: "Remove",
       onConfirm: async () => {
@@ -389,6 +399,63 @@
 
     return subject;
   }
+
+  function grantTitle(grant) {
+    const name = grant.name?.trim();
+    return name || subjectLabel(grant.subject);
+  }
+
+  function matchesSearch(...parts) {
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) {
+      return true;
+    }
+
+    const haystack = parts
+      .flat()
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(query);
+  }
+
+  $: searchPlaceholder =
+    tab === "users"
+      ? "Search users..."
+      : tab === "groups"
+        ? "Search groups..."
+        : "Search permissions...";
+
+  $: showListSearch =
+    !loading && !showUserForm && !showGroupForm && !showGrantForm;
+
+  $: filteredUsers = users.filter((user) =>
+    matchesSearch(
+      user.username,
+      user.displayName,
+      user.globalRole,
+      user.disabled ? "disabled" : "",
+      user.groups,
+    ),
+  );
+
+  $: filteredGroups = groups.filter((group) =>
+    matchesSearch(group.name, group.displayName, group.description),
+  );
+
+  $: filteredGrants = grants.filter((grant) =>
+    matchesSearch(
+      grant.name,
+      subjectLabel(grant.subject),
+      grant.subject,
+      grant.vault,
+      grant.path,
+      grant.actions,
+      grant.effect,
+    ),
+  );
 
   function onEscape() {
     if (confirmDialog || messageDialog) {
@@ -432,6 +499,7 @@
         on:click={() => {
           tab = t.id;
           error = "";
+          searchQuery = "";
         }}
       >
         <svelte:component this={t.icon} size="1rem" />
@@ -442,6 +510,18 @@
 
   {#if error}
     <div class="banner error">{error}</div>
+  {/if}
+
+  {#if showListSearch}
+    <div class="search-bar">
+      <SearchInput
+        value={searchQuery}
+        placeholder={searchPlaceholder}
+        on:input={(e) => {
+          searchQuery = e.detail;
+        }}
+      />
+    </div>
   {/if}
 
   <div class="panel">
@@ -509,8 +589,10 @@
         <div class="list">
           {#if users.length === 0}
             <div class="empty">No users yet.</div>
+          {:else if filteredUsers.length === 0}
+            <div class="empty">No users match your search.</div>
           {:else}
-            {#each users as user (user.id)}
+            {#each filteredUsers as user (user.id)}
               <div class="row">
                 <div class="row-main">
                   <div class="row-title">
@@ -573,8 +655,10 @@
         <div class="list">
           {#if groups.length === 0}
             <div class="empty">No groups yet.</div>
+          {:else if filteredGroups.length === 0}
+            <div class="empty">No groups match your search.</div>
           {:else}
-            {#each groups as group (group.name)}
+            {#each filteredGroups as group (group.name)}
               <div class="row">
                 <div class="row-main">
                   <div class="row-title">{group.displayName || group.name}</div>
@@ -602,6 +686,15 @@
       {#if showGrantForm}
         <div class="form">
           <h3>{editingGrant ? "Edit permission" : "New permission"}</h3>
+
+          <label class="field">
+            <span>Name</span>
+            <input
+              type="text"
+              bind:value={grantForm.name}
+              placeholder="Contractors – Client A read-only"
+            />
+          </label>
 
           <label class="field">
             <span>Apply to</span>
@@ -694,17 +787,22 @@
         <div class="list">
           {#if grants.length === 0}
             <div class="empty">No permissions yet. Users see nothing until granted.</div>
+          {:else if filteredGrants.length === 0}
+            <div class="empty">No permissions match your search.</div>
           {:else}
-            {#each grants as grant (grant.id)}
+            {#each filteredGrants as grant (grant.id)}
               <div class="row">
                 <div class="row-main">
                   <div class="row-title">
-                    {subjectLabel(grant.subject)}
+                    {grantTitle(grant)}
                     {#if grant.effect === "deny"}
                       <span class="badge danger">deny</span>
                     {/if}
                   </div>
                   <div class="row-sub">
+                    {#if grant.name?.trim()}
+                      {subjectLabel(grant.subject)} ·
+                    {/if}
                     {grant.vault} · {grant.path} · {grant.actions.join(", ")}
                   </div>
                 </div>
@@ -801,6 +899,10 @@
   .banner.error {
     background: rgba(233, 49, 71, 0.15);
     color: var(--text-error, #e93147);
+  }
+
+  .search-bar {
+    padding: 0.75rem 1rem 0;
   }
 
   .panel {
@@ -910,7 +1012,7 @@
     color: var(--text-muted);
   }
 
-  .field input,
+  .field input:not([type="checkbox"]),
   .field select {
     padding: 0.5rem 0.625rem;
     border-radius: 0.375rem;
@@ -924,12 +1026,13 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem 1rem;
+    padding-top: 0.125rem;
   }
 
   .checkbox-row {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.5rem;
     color: var(--text-normal);
     font-size: 0.875rem;
   }
